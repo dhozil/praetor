@@ -1,7 +1,0 @@
-# Cloudflare Workers config
-# Build generates .output/server/wrangler.json — this file configures the deploy target.
-name = "praetor"
-compatibility_date = "2026-07-07"
-compatibility_flags = ["nodejs_compat"]
-main = ".output/server/index.mjs"
-assets = { directory = ".output/public", binding = "ASSETS" }
