@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="wax" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5f0e6"/>
+      <stop offset="50%" stop-color="#e8dcc8"/>
+      <stop offset="100%" stop-color="#b8a882"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fffbe6"/>
+      <stop offset="55%" stop-color="#e8a830"/>
+      <stop offset="100%" stop-color="#c06020"/>
+    </linearGradient>
+    <linearGradient id="base" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c8a050"/>
+      <stop offset="100%" stop-color="#8a6830"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f0c850cc"/>
+      <stop offset="70%" stop-color="#d4a03020"/>
+      <stop offset="100%" stop-color="#d4a03000"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1"/>
+    </filter>
+  </defs>
+
+  <!-- base -->
+  <rect x="20" y="52" width="24" height="4" rx="1" fill="url(#base)"/>
+  <rect x="17" y="54" width="30" height="3" rx="1" fill="url(#base)"/>
+  <ellipse cx="32" cy="52" rx="12" ry="3" fill="url(#base)"/>
+
+  <!-- candle body -->
+  <rect x="22" y="18" width="20" height="36" rx="3" fill="url(#wax)" stroke="#a08848" stroke-width="0.8"/>
+
+  <!-- wick -->
+  <line x1="32" y1="18" x2="32" y2="12" stroke="#2a2018" stroke-width="1.2"/>
+
+  <!-- halo -->
+  <circle cx="32" cy="8" r="14" fill="url(#halo)">
+    <animate attributeName="r" values="12;16;12" dur="1.6s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- flame -->
+  <g filter="url(#glow)">
+    <path fill="url(#flame)">
+      <animate
+        attributeName="d"
+        dur="0.9s"
+        repeatCount="indefinite"
+        values="
+          M 32 0 C 38 6, 38 12, 32 16 C 26 12, 26 6, 32 0 Z;
+          M 32 -2 C 39 5, 37 12, 32 16 C 27 12, 25 5, 32 -2 Z;
+          M 32 1 C 37 7, 39 12, 32 16 C 25 12, 27 7, 32 1 Z;
+          M 32 0 C 38 6, 38 12, 32 16 C 26 12, 26 6, 32 0 Z"
+      />
+      <animateTransform
+        attributeName="transform"
+        type="rotate"
+        values="-3 32 16;3 32 16;-2 32 16;3 32 16;-3 32 16"
+        dur="1.4s"
+        repeatCount="indefinite"
+      />
+    </path>
+    <!-- inner blue core -->
+    <path d="M 32 8 C 34 10, 34 13, 32 15 C 30 13, 30 10, 32 8 Z" fill="#6090d0" opacity="0.6"/>
+  </g>
+</svg>
