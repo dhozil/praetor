@@ -2,23 +2,23 @@
 
 > *Sicut praetor Romanus, ita contractus intelligens: iustus, verificabilis, immutabilis.*
 
-Praetor adalah **marketplace escrow** berbasis **Intelligent Contracts** di atas **GenLayer Bradbury**. Client posting job, freelancer apply, dan LLM validator GenLayer memverifikasi milestone via AI consensus.
+Praetor is an **escrow marketplace** built on **Intelligent Contracts** over **GenLayer Bradbury**. Clients post jobs, freelancers apply, and GenLayer's LLM validators verify milestones via AI consensus.
 
-## Fitur
+## Features
 
-| Tab | Fungsi |
+| Tab | Description |
 |---|---|
-| **Marketplace** | Lihat open job, apply, atau posting job baru (dana langsung terkunci) |
-| **Dashboard** | Lihat job/escrow sebagai client atau freelancer |
-| **AI Verify** | Submit bukti kerja, GenLayer AI nilai kelulusan |
-| **Release** | Client release dana per milestone setelah AI verify |
-| **Dispute** | Kedua pihak kirim statement, AI jury putuskan verdict |
-| **History** | Riwayat job yang sudah completed |
-| **Reputation** | Skor on-chain setiap wallet |
+| **Marketplace** | Browse open jobs, apply as freelancer, or post a new job (funds locked on-chain) |
+| **Dashboard** | View your jobs/escrows as client or freelancer with real-time milestone status |
+| **AI Verify** | Submit work evidence (GitHub, URL, documents). GenLayer validators run LLM to score pass/fail |
+| **Release** | Client releases milestone payments to freelancer (only after AI verify passes) |
+| **Dispute** | Both parties submit statements. AI jury of 5 validators decides the verdict |
+| **History** | Completed jobs record with escrow details |
+| **Reputation** | On-chain reputation score per wallet |
 
 ## Tech Stack
 
-| Lapisan | Teknologi |
+| Layer | Technology |
 |---|---|
 | Framework | TanStack Start v1 (React 19, SSR) |
 | Build | Vite 8 |
@@ -26,31 +26,31 @@ Praetor adalah **marketplace escrow** berbasis **Intelligent Contracts** di atas
 | Icons | Lucide React |
 | Smart Contract | Python (GenLayer `py-genlayer`) |
 | GenLayer SDK | `genlayer-js` v1.2.0 |
-| Wallet | EIP-6963 (MetaMask, Rabby, dll.) |
+| Wallet | EIP-6963 (MetaMask, Rabby, etc.) |
 | RPC | `https://rpc-bradbury.genlayer.com` |
 | Contract | `0x75E095CC5820e989Ffa3E17bF7cF6db3ea593980` (PraetorV2) |
 
-## Struktur
+## Structure
 
 ```
 src/
 ├── lib/
-│   ├── genlayer-client.ts    # Wrapper writeContract / readContract
+│   ├── genlayer-client.ts    # writeContract / readContract wrapper
 │   ├── genlayer-network.ts   # Network config + contract address
 │   └── wallet.tsx            # EIP-6963 wallet provider
 ├── routes/
-│   ├── features.tsx          # Semua tab (Marketplace s/d Reputation)
+│   ├── features.tsx          # All tabs (Marketplace through Reputation)
 │   └── index.tsx             # Landing page
 ├── components/
-│   ├── RomanCandle.tsx       # Animasi lilin
+│   ├── RomanCandle.tsx       # Candle animation component
 │   └── ui/                   # shadcn/ui components
 ├── styles.css                # Tailwind theme
 ├── router.tsx
 └── contracts/
-    └── praetor.py            # Smart contract PraetorV2
+    └── praetor.py            # PraetorV2 smart contract
 ```
 
-## Jalankan
+## Getting Started
 
 ```bash
 bun install
@@ -58,6 +58,6 @@ bun run dev          # http://localhost:8080
 bun run build        # Production build
 ```
 
-## Lisensi
+## License
 
 MIT
