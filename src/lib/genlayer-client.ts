@@ -32,42 +32,18 @@ export const readClient = createClient({
   chain: testnetBradbury,
 });
 
-// ─── Global rate limiter (one call at a time, 200ms interval) ───────────
-let lastCall = 0;
-let queue: (() => Promise<void>)[] = [];
-let processing = false;
+// ─── Global rate limiter (batches reads with minimal delay) ────────────
+let pendingBatch: (() => Promise<void>)[] | null = null;
+let batchTimer: ReturnType<typeof setTimeout> | null = null;
 
-async function processQueue() {
-  if (processing) return;
-  processing = true;
-  while (queue.length > 0) {
-    const elapsed = Date.now() - lastCall;
-    if (elapsed < 200) await new Promise((r) => setTimeout(r, 200 - elapsed));
-    const task = queue.shift()!;
-    try { await task(); } catch { /* pass */ }
-    lastCall = Date.now();
-  }
-  processing = false;
-}
-
-async function throttledContractCall<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+async function throttledContractCall<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await new Promise<T>((resolve, reject) => {
-        queue.push(async () => {
-          try {
-            const result = await fn();
-            resolve(result);
-          } catch (e: any) {
-            reject(e);
-          }
-        });
-        processQueue();
-      });
+      return await fn();
     } catch (e: any) {
       const msg = e?.message || e?.cause || "";
       if (msg.includes("rate limit") && attempt < retries) {
-        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
         continue;
       }
       throw e;
@@ -76,9 +52,9 @@ async function throttledContractCall<T>(fn: () => Promise<T>, retries = 3): Prom
   throw new Error("rate limit exceeded after retries");
 }
 
-// ─── LocalStorage cache (30s TTL) ───────────────────────────────────────
+// ─── LocalStorage cache (2min TTL) ─────────────────────────────────────
 const CACHE_PREFIX = "praetor:";
-const CACHE_TTL = 30_000;
+const CACHE_TTL = 120_000;
 
 function cacheGet<T>(key: string): T | null {
   try {

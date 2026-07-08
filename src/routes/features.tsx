@@ -628,26 +628,19 @@ function DashboardDemo() {
       const jm = new Map(jobs);
       const em = new Map(escrows);
       const ap = new Map(applicants);
-      for (const id of ids) {
-        if (!jm.has(id.toString())) {
-          try {
-            const job = await getJob(id);
-            jm.set(id.toString(), job);
-            if (job.status === "assigned") {
-              try {
-                const escrow = await getEscrow(id);
-                if (escrow) em.set(id.toString(), escrow);
-              } catch { /* no escrow yet */ }
-            }
-            if (job.status === "open") {
-              try {
-                const apps = await getApplicants(id);
-                if (apps.length > 0) ap.set(id.toString(), apps);
-              } catch { /* */ }
-            }
-          } catch { /* skip */ }
-        }
-      }
+      const uncached = ids.filter((id) => !jm.has(id.toString()));
+      await Promise.all(uncached.map(async (id) => {
+        try {
+          const job = await getJob(id);
+          jm.set(id.toString(), job);
+          if (job.status === "assigned") {
+            try { const escrow = await getEscrow(id); if (escrow) em.set(id.toString(), escrow); } catch { /* */ }
+          }
+          if (job.status === "open") {
+            try { const apps = await getApplicants(id); if (apps.length > 0) ap.set(id.toString(), apps); } catch { /* */ }
+          }
+        } catch { /* skip */ }
+      }));
       setJobs(jm);
       setEscrows(em);
       setApplicants(ap);
@@ -1331,19 +1324,17 @@ function HistoryDemo() {
     const fetchFn = role === "client" ? getClientJobs : getFreelancerJobs;
     try {
       const ids = await fetchFn(account);
-      const list: any[] = [];
-      for (const id of ids) {
+      const list: any[] = (await Promise.all(ids.map(async (id) => {
         try {
           const job = await getJob(id);
           if (job.status === "completed") {
             let escrow = null;
-            try {
-              escrow = await getEscrow(id);
-            } catch {}
-            list.push({ ...job, jobId: id, escrow });
+            try { escrow = await getEscrow(id); } catch {}
+            return { ...job, jobId: id, escrow };
           }
         } catch {}
-      }
+        return null;
+      }))).filter(Boolean);
       setCompleted(list);
     } finally {
       setLoading(false);
