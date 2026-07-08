@@ -46,6 +46,8 @@ import {
   getEscrow,
   verifyMilestone,
   getVerification,
+  getDispute,
+  getEscrowEvents,
   releasePayment,
   openDispute,
   waitForReceipt,
@@ -1181,7 +1183,9 @@ function DisputeDemo() {
   const [client, setClient] = useState("");
   const [freelancer, setFreelancer] = useState("");
   const [phase, setPhase] = useState<"idle" | "voting" | "verdict">("idle");
-  const [votes, setVotes] = useState<Array<"client" | "freelancer" | "pending">>(Array(5).fill("pending"));
+  const [txHash, setTxHash] = useState("");
+  const [disputeId, setDisputeId] = useState<bigint | null>(null);
+  const [result, setResult] = useState<any>(null);
   const [txError, setTxError] = useState("");
 
   const canJudge = escrowId.trim().length > 0 && milestoneIdx.trim().length >= 0 && client.trim().length > 0 && freelancer.trim().length > 0 && connected;
@@ -1189,23 +1193,35 @@ function DisputeDemo() {
   const judge = async () => {
     if (!canJudge || !account || !wallet?.provider) return;
     setTxError("");
+    setTxHash("");
+    setDisputeId(null);
+    setResult(null);
     setPhase("voting");
-    setVotes(Array(5).fill("pending"));
     try {
-      const txHash = await openDispute(account, wallet.provider, BigInt(escrowId), BigInt(milestoneIdx || "0"), client, [], freelancer, []);
-      await waitForReceipt(txHash);
-      const bias = client.length / (client.length + freelancer.length);
-      for (let i = 0; i < 5; i++) {
-        setTimeout(() => {
-          setVotes((v) => {
-            const c = [...v];
-            const seed = (client.charCodeAt(i % client.length) + freelancer.charCodeAt(i % freelancer.length) + i) % 100;
-            c[i] = seed / 100 < bias ? "client" : "freelancer";
-            return c;
-          });
-        }, 700 + i * 500);
+      const hash = await openDispute(account, wallet.provider, BigInt(escrowId), BigInt(milestoneIdx || "0"), client, [], freelancer, []);
+      setTxHash(hash);
+      await waitForReceipt(hash);
+
+      // Read escrow events to find dispute_id
+      const events = await getEscrowEvents(BigInt(escrowId));
+      const discEvent = events.find((e: any) => e.description?.includes("Dispute #"));
+      if (discEvent) {
+        const match = discEvent.description.match(/#(\d+)/);
+        if (match) {
+          const did = BigInt(match[1]);
+          setDisputeId(did);
+          // Poll dispute result after AI processes
+          setTimeout(async () => {
+            try {
+              const d = await getDispute(did);
+              if (d.resolved) {
+                setResult(d);
+                setPhase("verdict");
+              }
+            } catch { /* not ready yet */ }
+          }, 3000);
+        }
       }
-      setTimeout(() => setPhase("verdict"), 4200);
     } catch (e: any) {
       const msg = e?.shortMessage || e?.message || "Transaction failed";
       setTxError(msg.includes("reverted") ? msg : `Transaction reverted: ${msg}`);
@@ -1213,8 +1229,14 @@ function DisputeDemo() {
     }
   };
 
-  const freelancerWins = votes.filter((v) => v === "freelancer").length;
-  const clientWins = votes.filter((v) => v === "client").length;
+  const checkResult = async () => {
+    if (!disputeId) return;
+    try {
+      const d = await getDispute(disputeId);
+      setResult(d);
+      if (d.resolved) setPhase("verdict");
+    } catch { /* */ }
+  };
 
   return (
     <DemoShell
@@ -1263,8 +1285,45 @@ function DisputeDemo() {
           <button onClick={judge} disabled={!canJudge || phase === "voting"}
             className="btn-gold w-full rounded-full py-3.5 font-medium hover:[&]:btn-gold-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {phase === "voting" ? "Jury deliberating…" : phase === "verdict" ? "Verdict rendered" : !connected ? "Connect wallet first" : canJudge ? "Convene the jury" : "Fill all fields"}
+            {phase === "voting" ? "Opening dispute…" : phase === "verdict" ? "Verdict rendered" : !connected ? "Connect wallet first" : canJudge ? "Open dispute" : "Fill all fields"}
           </button>
+
+          {txHash && (
+            <div className="rounded-xl border border-gold/20 p-3 text-xs space-y-1">
+              <div className="text-gold-soft uppercase tracking-wider">Transaction</div>
+              <a href={`https://explorer-bradbury.genlayer.com/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-marble underline underline-offset-2 break-all">{txHash.slice(0, 20)}…{txHash.slice(-8)}</a>
+              {disputeId && <div className="text-muted-foreground">Dispute #{disputeId.toString()}</div>}
+            </div>
+          )}
+
+          {disputeId && !result && (
+            <button onClick={checkResult} className="inline-flex items-center gap-1.5 text-xs text-gold-soft hover:text-foreground">
+              <ExternalLink className="h-3 w-3" /> Check dispute result
+            </button>
+          )}
+
+          {result && (
+            <div className="rounded-xl border border-gold/20 p-4 space-y-2">
+              <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Result</div>
+              <div className={`text-lg font-display ${result.verdict === "client" ? "text-destructive" : "text-green-400"}`}>
+                {result.verdict === "client" ? "Client wins" : result.verdict === "freelancer" ? "Freelancer wins" : "Split"}
+              </div>
+              {result.juror_votes?.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Juror votes ({result.juror_votes.length})</div>
+                  <div className="flex gap-1">
+                    {result.juror_votes.map((v: any, i: number) => (
+                      <span key={i} className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono ${
+                        v.vote === "client" ? "bg-destructive/10 text-destructive" :
+                        v.vote === "freelancer" ? "bg-green-400/10 text-green-400" :
+                        "bg-gold/10 text-gold-soft"
+                      }`}>{v.vote}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {txError && (
             <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">{txError}</div>
@@ -1273,26 +1332,39 @@ function DisputeDemo() {
           <div className="rounded-xl border border-gold/20 p-4">
             <div className="mb-4 text-xs uppercase tracking-[0.25em] text-gold-soft">Validator jury (5 seats)</div>
             <div className="flex justify-around">
-              {votes.map((v, i) => (
-                <div key={i} className="flex flex-col items-center gap-2">
-                  <div className={`grid h-14 w-14 place-items-center rounded-full border transition-all ${
-                    v === "pending" ? "border-gold/20 text-muted-foreground" :
-                    v === "freelancer" ? "border-gold/60 bg-gold/15 text-marble" :
-                    "border-destructive/50 bg-destructive/10 text-destructive"
-                  }`}>
-                    {v === "pending" ? <Sparkles className="h-5 w-5 animate-pulse" /> :
-                     v === "freelancer" ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
+              {result?.juror_votes?.length > 0 ? (
+                result.juror_votes.map((v: any, i: number) => (
+                  <div key={i} className="flex flex-col items-center gap-2">
+                    <div className={`grid h-14 w-14 place-items-center rounded-full border transition-all ${
+                      v.vote === "pending" ? "border-gold/20 text-muted-foreground" :
+                      v.vote === "freelancer" ? "border-gold/60 bg-gold/15 text-marble" :
+                      "border-destructive/50 bg-destructive/10 text-destructive"
+                    }`}>
+                      {v.vote === "pending" ? <Sparkles className="h-5 w-5 animate-pulse" /> :
+                       v.vote === "freelancer" ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">V{i + 1}</div>
                   </div>
-                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">V{i + 1}</div>
-                </div>
-              ))}
+                ))
+              ) : phase === "voting" ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex flex-col items-center gap-2">
+                    <div className="grid h-14 w-14 place-items-center rounded-full border border-gold/20 text-muted-foreground">
+                      <Sparkles className="h-5 w-5 animate-pulse" />
+                    </div>
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">V{i + 1}</div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-xs text-muted-foreground py-4">No dispute opened yet. Fill the fields and click "Open dispute".</div>
+              )}
             </div>
-            {phase === "verdict" && (
+            {phase === "verdict" && result && (
               <div className="mt-6 text-center">
                 <div className="font-display text-2xl text-gold-gradient">
-                  Verdict: {freelancerWins > clientWins ? "Freelancer" : "Client"} wins ({Math.max(freelancerWins, clientWins)}/5)
+                  Verdict: {result.verdict === "client" ? "Client" : result.verdict === "freelancer" ? "Freelancer" : "Split"} wins
                 </div>
-                <p className="mt-2 text-sm text-muted-foreground">Funds released according to the majority reasoning.</p>
+                <p className="mt-2 text-sm text-muted-foreground">Resolved by AI dispute resolution.</p>
               </div>
             )}
           </div>
@@ -1300,9 +1372,9 @@ function DisputeDemo() {
       }
       right={
         <div className="flex h-full flex-col items-center justify-center text-center">
-          <RomanCandle active={phase === "voting"} durationMs={4200} label="Jury reasoning" size="lg" />
+          <RomanCandle active={phase === "voting"} durationMs={6000} label="Processing dispute" size="lg" />
           <div className="mt-4 text-xs uppercase tracking-[0.25em] text-muted-foreground">
-            {phase === "voting" ? "Validators deliberating" : phase === "verdict" ? "Verdict rendered" : "Awaiting dispute"}
+            {phase === "voting" ? "Opening dispute on-chain" : phase === "verdict" ? "Verdict rendered" : "Awaiting dispute"}
           </div>
         </div>
       }

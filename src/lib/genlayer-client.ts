@@ -382,6 +382,17 @@ export async function getEscrow(escrowId: bigint): Promise<any> {
   return result;
 }
 
+export async function getEscrowEvents(escrowId: bigint): Promise<any[]> {
+  const result = await cachedRead("escrowEvents:" + escrowId.toString(), () =>
+    readClient.readContract({
+      address: PRAETOR_ADDRESS,
+      functionName: "get_escrow_events",
+      args: [escrowId],
+    }),
+  );
+  return (result as any[]) || [];
+}
+
 export async function getVerification(
   escrowId: bigint,
   milestoneIndex: bigint,
@@ -394,6 +405,19 @@ export async function getVerification(
     }),
   );
   return result as any;
+}
+
+export async function getDispute(
+  disputeId: bigint,
+): Promise<any> {
+  const result = await cachedRead("dispute:" + disputeId.toString(), () =>
+    readClient.readContract({
+      address: PRAETOR_ADDRESS,
+      functionName: "get_dispute",
+      args: [disputeId],
+    }),
+  );
+  return result;
 }
 
 export async function isVerified(
