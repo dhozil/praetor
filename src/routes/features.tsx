@@ -40,6 +40,7 @@ import {
   getApplicants,
   getOpenJobsWithDetails,
   invalidateMarketplaceCache,
+  invalidateAllCache,
   getClientJobs,
   getFreelancerJobs,
   getEscrow,
@@ -335,7 +336,7 @@ function MarketplaceDemo() {
       setMsTitles([""]);
       setBudget("");
       setRequirements("");
-      invalidateMarketplaceCache();
+      invalidateAllCache();
       await refresh();
     } catch { /* tx failed */ }
     setPosting(false);
@@ -347,7 +348,7 @@ function MarketplaceDemo() {
     try {
       const txHash = await applyJob(account, wallet.provider, jobId);
       await waitForReceipt(txHash);
-      invalidateMarketplaceCache();
+      invalidateAllCache();
       await refresh();
     } catch { /* failed */ }
     setApplyLoading(null);

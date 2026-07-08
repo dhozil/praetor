@@ -87,6 +87,16 @@ export async function getOpenJobsWithDetails(): Promise<{ id: bigint; job: any; 
   return results;
 }
 
+export function invalidateAllCache(): void {
+  const prefix = CACHE_PREFIX;
+  const keys: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k?.startsWith(prefix)) keys.push(k);
+  }
+  keys.forEach((k) => localStorage.removeItem(k));
+}
+
 export function invalidateMarketplaceCache(): void { localStorage.removeItem(CACHE_PREFIX + "marketplace"); }
 
 export function resetWriteClient() {
@@ -284,8 +294,17 @@ export async function openDispute(
 
 // ─── Marketplace Read ───────────────────────────────────────────────────────
 
+function cachedRead<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const cached = cacheGet<T>(key);
+  if (cached !== null) return Promise.resolve(cached);
+  return throttledContractCall(fn).then((result) => {
+    cacheSet(key, result);
+    return result;
+  });
+}
+
 export async function getOpenJobs(): Promise<bigint[]> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("openJobs", () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "get_open_jobs",
@@ -296,7 +315,7 @@ export async function getOpenJobs(): Promise<bigint[]> {
 }
 
 export async function getJob(jobId: bigint): Promise<any> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("job:" + jobId.toString(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "get_job",
@@ -307,7 +326,7 @@ export async function getJob(jobId: bigint): Promise<any> {
 }
 
 export async function getApplicants(jobId: bigint): Promise<string[]> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("applicants:" + jobId.toString(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "get_applicants",
@@ -318,7 +337,7 @@ export async function getApplicants(jobId: bigint): Promise<string[]> {
 }
 
 export async function getClientJobs(clientAddress: string): Promise<bigint[]> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("clientJobs:" + clientAddress.toLowerCase(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "get_client_jobs",
@@ -329,7 +348,7 @@ export async function getClientJobs(clientAddress: string): Promise<bigint[]> {
 }
 
 export async function getFreelancerJobs(freelancerAddress: string): Promise<bigint[]> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("freelancerJobs:" + freelancerAddress.toLowerCase(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "get_freelancer_jobs",
@@ -342,7 +361,7 @@ export async function getFreelancerJobs(freelancerAddress: string): Promise<bigi
 // ─── Escrow Read ────────────────────────────────────────────────────────────
 
 export async function getEscrowStatus(escrowId: bigint): Promise<string> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("escrowStatus:" + escrowId.toString(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "get_escrow_status",
@@ -353,7 +372,7 @@ export async function getEscrowStatus(escrowId: bigint): Promise<string> {
 }
 
 export async function getEscrow(escrowId: bigint): Promise<any> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("escrow:" + escrowId.toString(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "get_escrow",
@@ -367,7 +386,7 @@ export async function getVerification(
   escrowId: bigint,
   milestoneIndex: bigint,
 ): Promise<{ passed: boolean; score: number; reasoning: string; evidence_count: number }> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("verification:" + escrowId.toString() + ":" + milestoneIndex.toString(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "get_verification",
@@ -381,7 +400,7 @@ export async function isVerified(
   escrowId: bigint,
   milestoneIndex: bigint,
 ): Promise<boolean> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("isVerified:" + escrowId.toString() + ":" + milestoneIndex.toString(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "is_verified",
@@ -392,7 +411,7 @@ export async function isVerified(
 }
 
 export async function getPraetorScore(walletAddress: string): Promise<bigint> {
-  const result = await throttledContractCall(() =>
+  const result = await cachedRead("score:" + walletAddress.toLowerCase(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,
       functionName: "get_praetor_score",
