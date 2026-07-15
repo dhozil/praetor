@@ -48,6 +48,7 @@ class Escrow:
     status: str
     created_at: u256
     dispute_open: bool
+    winner: Address
 
 
 @allow_storage
@@ -283,6 +284,7 @@ class PraetorV2(gl.Contract):
             status="active",
             created_at=u256(0),
             dispute_open=False,
+            winner=Address("0x0000000000000000000000000000000000000000"),
         )
         return escrow_id
 
@@ -597,6 +599,75 @@ Respond ONLY as JSON:
     def get_dispute(self, dispute_id: u256) -> Dispute:
         return self.disputes[dispute_id]
 
+    @gl.public.view
+    def get_dispute_counter(self) -> u256:
+        return self.dispute_counter
+
+    @gl.public.write
+    def execute_dispute_verdict(self, dispute_id: u256):
+        dispute = self.disputes[dispute_id]
+        if not dispute.resolved:
+            raise gl.vm.UserError("Dispute not yet resolved")
+        escrow = self.escrows[dispute.escrow_id]
+        if escrow.status != "disputed":
+            raise gl.vm.UserError("Escrow not in disputed state")
+
+        # Calculate remaining budget (unpaid milestone amounts)
+        remaining = u256(0)
+        for m in escrow.milestones:
+            if m.status != "paid":
+                remaining = remaining + m.amount
+
+        fee = (remaining * u256(self.platform_fee_percent)) / u256(100)
+        payout = remaining - fee
+
+        verdict = dispute.verdict
+        if verdict == "client":
+            recipient = escrow.client
+            escrow.winner = escrow.client
+            escrow.status = "refunded"
+            self._log_event("dispute_executed", dispute.escrow_id,
+                            f"Verdict: client — refunded {payout} wei")
+        elif verdict == "freelancer":
+            recipient = escrow.freelancer
+            escrow.winner = escrow.freelancer
+            escrow.status = "completed"
+            self._log_event("dispute_executed", dispute.escrow_id,
+                            f"Verdict: freelancer — paid {payout} wei")
+        else:  # split
+            half = payout / u256(2)
+            remainder = payout - half
+            client_recv = gl.get_contract_at(escrow.client)
+            client_recv.emit_transfer(value=half)
+            freelancer_recv = gl.get_contract_at(escrow.freelancer)
+            freelancer_recv.emit_transfer(value=remainder)
+            escrow.winner = Address("0x0000000000000000000000000000000000000000")
+            escrow.status = "completed"
+            self._log_event("dispute_executed", dispute.escrow_id,
+                            f"Verdict: split — client {half}, freelancer {remainder}")
+            # Update reputation for both
+            self._record_dispute_result(str(escrow.client), True)
+            self._record_dispute_result(str(escrow.freelancer), True)
+            self.escrows[dispute.escrow_id] = escrow
+            return
+
+        recv_contract = gl.get_contract_at(recipient)
+        recv_contract.emit_transfer(value=payout)
+        self.escrows[dispute.escrow_id] = escrow
+        self._record_dispute_result(str(recipient), True)
+        other = str(escrow.freelancer) if verdict == "client" else str(escrow.client)
+        self._record_dispute_result(other, False)
+
+    def _record_dispute_result(self, user_address: str, won: bool):
+        user = Address(user_address)
+        if user in self.profiles:
+            p = self.profiles[user]
+            p.disputed_jobs = p.disputed_jobs + u256(1)
+            if won:
+                p.won_disputes = p.won_disputes + u256(1)
+            p.praetor_score = self._calc_score(p)
+            self.profiles[user] = p
+
     # ── Reputation Methods ──────────────────────────────────────────────────
 
     @gl.public.write
@@ -632,13 +703,7 @@ Respond ONLY as JSON:
 
     @gl.public.write
     def record_dispute_result(self, user_address: str, won: bool):
-        user = Address(user_address)
-        p = self.profiles[user]
-        p.disputed_jobs = p.disputed_jobs + u256(1)
-        if won:
-            p.won_disputes = p.won_disputes + u256(1)
-        p.praetor_score = self._calc_score(p)
-        self.profiles[user] = p
+        self._record_dispute_result(user_address, won)
 
     @gl.public.view
     def get_praetor_score(self, user_address: str) -> u256:

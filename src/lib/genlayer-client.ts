@@ -292,6 +292,53 @@ export async function openDispute(
   return txHash as string;
 }
 
+export async function castJurorVote(
+  walletAddress: string,
+  provider: any,
+  disputeId: bigint,
+  vote: string,
+  reasoning: string,
+): Promise<string> {
+  const client = getWriteClient(walletAddress, provider);
+  const txHash = await client.writeContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "cast_juror_vote",
+    args: [disputeId, vote, reasoning],
+    value: BigInt(0),
+  });
+  return txHash as string;
+}
+
+export async function resolveDispute(
+  walletAddress: string,
+  provider: any,
+  disputeId: bigint,
+): Promise<string> {
+  const client = getWriteClient(walletAddress, provider);
+  const txHash = await client.writeContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "resolve_dispute",
+    args: [disputeId],
+    value: BigInt(0),
+  });
+  return txHash as string;
+}
+
+export async function executeDisputeVerdict(
+  walletAddress: string,
+  provider: any,
+  disputeId: bigint,
+): Promise<string> {
+  const client = getWriteClient(walletAddress, provider);
+  const txHash = await client.writeContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "execute_dispute_verdict",
+    args: [disputeId],
+    value: BigInt(0),
+  });
+  return txHash as string;
+}
+
 // ─── Marketplace Read ───────────────────────────────────────────────────────
 
 function cachedRead<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -418,6 +465,17 @@ export async function getDispute(
     }),
   );
   return result;
+}
+
+export async function getDisputeCounter(): Promise<bigint> {
+  const result = await cachedRead("disputeCounter", () =>
+    readClient.readContract({
+      address: PRAETOR_ADDRESS,
+      functionName: "get_dispute_counter",
+      args: [],
+    }),
+  );
+  return result as bigint;
 }
 
 export async function isVerified(

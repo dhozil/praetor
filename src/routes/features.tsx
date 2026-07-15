@@ -47,9 +47,13 @@ import {
   verifyMilestone,
   getVerification,
   getDispute,
+  getDisputeCounter,
   getEscrowEvents,
   releasePayment,
   openDispute,
+  castJurorVote,
+  resolveDispute,
+  executeDisputeVerdict,
   waitForReceipt,
 } from "@/lib/genlayer-client";
 import shieldImg from "@/assets/gold-shield.png";
@@ -1178,211 +1182,259 @@ function ReleaseDemo() {
 function DisputeDemo() {
   const { account, connected } = useWallet();
   const wallet = connected;
+
+  const [step, setStep] = useState<"open" | "votes" | "resolve" | "execute" | "done">("open");
+
   const [escrowId, setEscrowId] = useState("");
   const [milestoneIdx, setMilestoneIdx] = useState("");
   const [client, setClient] = useState("");
   const [freelancer, setFreelancer] = useState("");
-  const [phase, setPhase] = useState<"idle" | "voting" | "verdict">("idle");
-  const [txHash, setTxHash] = useState("");
+
   const [disputeId, setDisputeId] = useState<bigint | null>(null);
-  const [result, setResult] = useState<any>(null);
-  const [txError, setTxError] = useState("");
+  const [txHash, setTxHash] = useState("");
 
-  const canJudge = escrowId.trim().length > 0 && milestoneIdx.trim().length >= 0 && client.trim().length > 0 && freelancer.trim().length > 0 && connected;
+  const [juryVotes, setJuryVotes] = useState<{ vote: string; reasoning: string }[]>([]);
+  const [currentVote, setCurrentVote] = useState<{ vote: string; reasoning: string }>({ vote: "client", reasoning: "" });
 
-  const judge = async () => {
-    if (!canJudge || !account || !wallet?.provider) return;
-    setTxError("");
-    setTxHash("");
-    setDisputeId(null);
-    setResult(null);
-    setPhase("voting");
+  const [resolution, setResolution] = useState<any>(null);
+  const [execution, setExecution] = useState<any>(null);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const canOpen = escrowId.trim().length > 0 && client.trim().length > 0 && freelancer.trim().length > 0 && connected;
+
+  const handleOpen = async () => {
+    if (!canOpen || !account || !wallet?.provider) return;
+    setError(""); setLoading(true);
     try {
       const hash = await openDispute(account, wallet.provider, BigInt(escrowId), BigInt(milestoneIdx || "0"), client, [], freelancer, []);
       setTxHash(hash);
       await waitForReceipt(hash);
-
-      // Read escrow events to find dispute_id
       const events = await getEscrowEvents(BigInt(escrowId));
       const discEvent = events.find((e: any) => e.description?.includes("Dispute #"));
-      if (discEvent) {
-        const match = discEvent.description.match(/#(\d+)/);
-        if (match) {
-          const did = BigInt(match[1]);
-          setDisputeId(did);
-          // Poll dispute result after AI processes
-          setTimeout(async () => {
-            try {
-              const d = await getDispute(did);
-              if (d.resolved) {
-                setResult(d);
-                setPhase("verdict");
-              }
-            } catch { /* not ready yet */ }
-          }, 3000);
-        }
-      }
-    } catch (e: any) {
-      const msg = e?.shortMessage || e?.message || "Transaction failed";
-      setTxError(msg.includes("reverted") ? msg : `Transaction reverted: ${msg}`);
-      setPhase("idle");
-    }
+      if (discEvent) { const m = discEvent.description.match(/#(\d+)/); if (m) setDisputeId(BigInt(m[1])); }
+      else { const c = await getDisputeCounter(); if (c > 0n) setDisputeId(c - 1n); }
+      invalidateAllCache();
+      setStep("votes");
+    } catch (e: any) { setError(e?.shortMessage || e?.message || "Open dispute failed"); }
+    finally { setLoading(false); }
   };
 
-  const checkResult = async () => {
-    if (!disputeId) return;
+  const handleCastVote = async () => {
+    if (!disputeId || !account || !wallet?.provider) return;
+    if (!currentVote.vote || !currentVote.reasoning.trim()) return;
+    setError(""); setLoading(true);
     try {
-      const d = await getDispute(disputeId);
-      setResult(d);
-      if (d.resolved) setPhase("verdict");
-    } catch { /* */ }
+      const hash = await castJurorVote(account, wallet.provider, disputeId, currentVote.vote, currentVote.reasoning);
+      await waitForReceipt(hash);
+      setJuryVotes((v) => [...v, { vote: currentVote.vote, reasoning: currentVote.reasoning }]);
+      setCurrentVote({ vote: "client", reasoning: "" });
+      if (juryVotes.length + 1 >= 5) setStep("resolve");
+      invalidateAllCache();
+    } catch (e: any) { setError(e?.shortMessage || e?.message || "Cast vote failed"); }
+    finally { setLoading(false); }
   };
+
+  const handleResolve = async () => {
+    if (!disputeId || !account || !wallet?.provider) return;
+    setError(""); setLoading(true);
+    try {
+      const hash = await resolveDispute(account, wallet.provider, disputeId);
+      await waitForReceipt(hash);
+      const d = await getDispute(disputeId);
+      setResolution(d);
+      setStep("execute");
+      invalidateAllCache();
+    } catch (e: any) { setError(e?.shortMessage || e?.message || "Resolve failed"); }
+    finally { setLoading(false); }
+  };
+
+  const handleExecute = async () => {
+    if (!disputeId || !account || !wallet?.provider) return;
+    setError(""); setLoading(true);
+    try {
+      const hash = await executeDisputeVerdict(account, wallet.provider, disputeId);
+      await waitForReceipt(hash);
+      const escrow = await getEscrow(BigInt(escrowId));
+      setExecution(escrow);
+      setStep("done");
+      invalidateAllCache();
+    } catch (e: any) { setError(e?.shortMessage || e?.message || "Execute failed"); }
+    finally { setLoading(false); }
+  };
+
+  const reset = () => {
+    setStep("open"); setEscrowId(""); setMilestoneIdx(""); setClient(""); setFreelancer("");
+    setDisputeId(null); setTxHash(""); setJuryVotes([]);
+    setCurrentVote({ vote: "client", reasoning: "" });
+    setResolution(null); setExecution(null); setError("");
+  };
+
+  const examples = [
+    { escrowId: "0", milestoneIdx: "0", client: "The freelancer delivered the DeFi dashboard a week late and the wallet connect feature doesn't work with Ledger. I paid 0.6 GEN upfront and expected a working product. He refuses to fix the bugs unless I pay more.", freelancer: "I completed all 4 milestones on time. The client kept adding extra features mid-project and now blames me for scope creep. The Ledger issue is a known browser limitation, not a bug. I offered to fix it for an additional 0.1 GEN since it was out of scope." },
+    { escrowId: "1", milestoneIdx: "2", client: "I hired him for a smart contract audit. The report only found 2 issues when we later discovered 7 critical vulnerabilities. The audit was incomplete and I had to pay another auditor 0.5 GEN to redo the work. He refuses a refund.", freelancer: "The contract was 95% complete when I received it. I explicitly stated my audit scope was limited to the Solidity code provided. The client later added new modules that I never reviewed. My report clearly stated the scope limitations." },
+    { escrowId: "2", milestoneIdx: "1", client: "He built an NFT minting page but the gas estimation is completely wrong — users overpay by 3x on every mint. I asked for a fix 2 weeks ago and he keeps saying 'next week'. I want the milestone payment of 0.2 GEN returned.", freelancer: "I provided a working gas estimation module. The client deployed it with a different provider configuration that broke the estimates. I've offered 3 times to fix the configuration but the client won't share their deployment setup for debugging." },
+    { escrowId: "3", milestoneIdx: "0", client: "The AI chatbot integration was supposed to support GPT-4 but the delivered version only uses GPT-3.5. The response quality is noticeably worse and users are complaining. I paid 0.8 GEN for premium integration.", freelancer: "The project specification said 'LLM API integration' without specifying the model tier. GPT-4 costs 20x more per token. I built the integration to use whatever model the API key has access to. The client uses a free-tier key that only allows GPT-3.5." },
+    { escrowId: "4", milestoneIdx: "3", client: "The DAO governance dApp has a critical bug: proposal votes aren't counted correctly when quorum is reached on the last day. We lost a $10k treasury vote because of this. The freelancer blames the testing environment.", freelancer: "I delivered the code with full test coverage and a working demo on the testnet. The client modified the voting parameters after deployment without updating the quorum calculation. I can provide git history showing the client's changes broke the logic." },
+  ];
+
+  const stepLabels = ["1. Open", "2. Vote", "3. AI Resolve", "4. Execute", "Done"];
+  const stepIndex = ["open", "votes", "resolve", "execute", "done"].indexOf(step);
 
   return (
     <DemoShell
       title="Dispute resolution by AI jury"
-      subtitle="Five validators independently reason about both statements and vote. AI resolves the final verdict."
+      subtitle="5 validators vote, AI renders final verdict, funds released to winner."
       left={
         <div className="space-y-4">
-          <div className="flex gap-2">
-            <Field label="Escrow ID">
-              <input type="number" step="1" value={escrowId} onChange={(e) => setEscrowId(e.target.value)} className="input" placeholder="Escrow ID" />
-            </Field>
-            <Field label="Milestone">
-              <input type="number" step="1" value={milestoneIdx} onChange={(e) => setMilestoneIdx(e.target.value)} className="input w-20" placeholder="0" />
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Client's statement">
-              <textarea value={client} onChange={(e) => setClient(e.target.value)} rows={4} placeholder="Explain the client's position…" className="input resize-none" />
-            </Field>
-            <Field label="Freelancer's statement">
-              <textarea value={freelancer} onChange={(e) => setFreelancer(e.target.value)} rows={4} placeholder="Explain the freelancer's position…" className="input resize-none" />
-            </Field>
+          <div className="flex justify-between text-[10px] uppercase tracking-wider">
+            {stepLabels.map((label, i) => (
+              <div key={i} className={`flex items-center gap-1 ${i <= stepIndex ? "text-gold-soft" : "text-muted-foreground/40"}`}>
+                <div className={`w-5 h-5 rounded-full grid place-items-center text-[9px] font-mono ${i <= stepIndex ? "bg-gold/20 text-gold-soft" : "bg-gold/5 text-muted-foreground/40"}`}>{i + 1}</div>
+                <span className="hidden sm:inline">{label}</span>
+              </div>
+            ))}
           </div>
 
-          <button
-            onClick={() => {
-              const examples = [
-                { escrowId: "0", milestoneIdx: "0", client: "The freelancer delivered the DeFi dashboard a week late and the wallet connect feature doesn't work with Ledger. I paid 0.6 GEN upfront and expected a working product. He refuses to fix the bugs unless I pay more.", freelancer: "I completed all 4 milestones on time. The client kept adding extra features mid-project and now blames me for scope creep. The Ledger issue is a known browser limitation, not a bug. I offered to fix it for an additional 0.1 GEN since it was out of scope." },
-                { escrowId: "1", milestoneIdx: "2", client: "I hired him for a smart contract audit. The report only found 2 issues when we later discovered 7 critical vulnerabilities. The audit was incomplete and I had to pay another auditor 0.5 GEN to redo the work. He refuses a refund.", freelancer: "The contract was 95% complete when I received it. I explicitly stated my audit scope was limited to the Solidity code provided. The client later added new modules that I never reviewed. My report clearly stated the scope limitations." },
-                { escrowId: "2", milestoneIdx: "1", client: "He built an NFT minting page but the gas estimation is completely wrong — users overpay by 3x on every mint. I asked for a fix 2 weeks ago and he keeps saying 'next week'. I want the milestone payment of 0.2 GEN returned.", freelancer: "I provided a working gas estimation module. The client deployed it with a different provider configuration that broke the estimates. I've offered 3 times to fix the configuration but the client won't share their deployment setup for debugging." },
-                { escrowId: "3", milestoneIdx: "0", client: "The AI chatbot integration was supposed to support GPT-4 but the delivered version only uses GPT-3.5. The response quality is noticeably worse and users are complaining. I paid 0.8 GEN for premium integration.", freelancer: "The project specification said 'LLM API integration' without specifying the model tier. GPT-4 costs 20x more per token. I built the integration to use whatever model the API key has access to. The client uses a free-tier key that only allows GPT-3.5." },
-                { escrowId: "4", milestoneIdx: "3", client: "The DAO governance dApp has a critical bug: proposal votes aren't counted correctly when quorum is reached on the last day. We lost a $10k treasury vote because of this. The freelancer blames the testing environment.", freelancer: "I delivered the code with full test coverage and a working demo on the testnet. The client modified the voting parameters after deployment without updating the quorum calculation. I can provide git history showing the client's changes broke the logic." },
-              ];
-              const pick = examples[Math.floor(Math.random() * examples.length)];
-              setEscrowId(pick.escrowId);
-              setMilestoneIdx(pick.milestoneIdx);
-              setClient(pick.client);
-              setFreelancer(pick.freelancer);
-            }}
-            type="button"
-            className="inline-flex items-center gap-2 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 hover:text-foreground transition-colors"
-          >
-            <Sparkles className="h-3.5 w-3.5" /> Random fill example
-          </button>
+          {step === "open" && (
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Field label="Escrow ID">
+                  <input type="number" step="1" value={escrowId} onChange={(e) => setEscrowId(e.target.value)} className="input" placeholder="Escrow ID" />
+                </Field>
+                <Field label="Milestone">
+                  <input type="number" step="1" value={milestoneIdx} onChange={(e) => setMilestoneIdx(e.target.value)} className="input w-20" placeholder="0" />
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Client's statement">
+                  <textarea value={client} onChange={(e) => setClient(e.target.value)} rows={4} placeholder="Explain the client's position…" className="input resize-none" />
+                </Field>
+                <Field label="Freelancer's statement">
+                  <textarea value={freelancer} onChange={(e) => setFreelancer(e.target.value)} rows={4} placeholder="Explain the freelancer's position…" className="input resize-none" />
+                </Field>
+              </div>
+              <button onClick={() => { const pick = examples[Math.floor(Math.random() * examples.length)]; setEscrowId(pick.escrowId); setMilestoneIdx(pick.milestoneIdx); setClient(pick.client); setFreelancer(pick.freelancer); }} type="button" className="inline-flex items-center gap-2 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors">
+                <Sparkles className="h-3.5 w-3.5" /> Random fill
+              </button>
+              <button onClick={handleOpen} disabled={!canOpen || loading} className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                {loading ? "Opening…" : "Open dispute"}
+              </button>
+            </div>
+          )}
 
-          <button onClick={judge} disabled={!canJudge || phase === "voting"}
-            className="btn-gold w-full rounded-full py-3.5 font-medium hover:[&]:btn-gold-hover disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {phase === "voting" ? "Opening dispute…" : phase === "verdict" ? "Verdict rendered" : !connected ? "Connect wallet first" : canJudge ? "Open dispute" : "Fill all fields"}
-          </button>
+          {step === "votes" && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-gold/20 p-4">
+                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft mb-3">Jury votes ({juryVotes.length}/5)</div>
+                <div className="flex justify-around mb-4">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex flex-col items-center gap-2">
+                      <div className={`grid h-12 w-12 place-items-center rounded-full border text-xs ${i < juryVotes.length ? (juryVotes[i].vote === "freelancer" ? "border-gold/60 bg-gold/15 text-marble" : "border-destructive/50 bg-destructive/10 text-destructive") : "border-gold/20 text-muted-foreground"}`}>
+                        {i < juryVotes.length ? (juryVotes[i].vote === "freelancer" ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />) : <span className="font-mono">{i + 1}</span>}
+                      </div>
+                      <div className="text-[10px] uppercase text-muted-foreground">V{i + 1}</div>
+                    </div>
+                  ))}
+                </div>
+                {juryVotes.length < 5 && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">Vote {juryVotes.length + 1} of 5:</p>
+                    <div className="flex gap-2">
+                      <select value={currentVote.vote} onChange={(e) => setCurrentVote((v) => ({ ...v, vote: e.target.value }))} className="input w-28">
+                        <option value="client">Client</option>
+                        <option value="freelancer">Freelancer</option>
+                        <option value="split">Split</option>
+                      </select>
+                      <input value={currentVote.reasoning} onChange={(e) => setCurrentVote((v) => ({ ...v, reasoning: e.target.value }))} className="input flex-1" placeholder="Reasoning…" />
+                    </div>
+                    <button onClick={handleCastVote} disabled={loading || !currentVote.reasoning.trim()} className="btn-gold w-full rounded-full py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                      {loading ? "Casting…" : `Cast vote ${juryVotes.length + 1}`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {step === "resolve" && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-gold/20 p-4 text-center space-y-3">
+                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">AI resolution</div>
+                <p className="text-sm text-muted-foreground">All 5 votes cast. The AI model analyzes statements, evidence, and votes to render a binding verdict.</p>
+                <button onClick={handleResolve} disabled={loading} className="btn-gold rounded-full px-8 py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                  {loading ? "AI resolving…" : "Resolve with AI"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === "execute" && resolution && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-gold/20 p-4 space-y-3">
+                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Verdict</div>
+                <div className={`text-2xl font-display text-center ${resolution.verdict === "freelancer" ? "text-green-400" : "text-destructive"}`}>
+                  {resolution.verdict === "client" ? "Client" : resolution.verdict === "freelancer" ? "Freelancer" : "Split"} wins
+                </div>
+                {resolution.juror_votes?.length > 0 && (
+                  <div className="flex justify-center gap-1">
+                    {resolution.juror_votes.map((v: any, i: number) => (
+                      <span key={i} className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono ${v.vote === "client" ? "bg-destructive/10 text-destructive" : v.vote === "freelancer" ? "bg-green-400/10 text-green-400" : "bg-gold/10 text-gold-soft"}`}>{v.vote}</span>
+                    ))}
+                  </div>
+                )}
+                <button onClick={handleExecute} disabled={loading} className="btn-gold w-full rounded-full py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                  {loading ? "Executing…" : "Execute & release funds"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === "done" && execution && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-green-400/30 bg-green-400/5 p-4 text-center space-y-2">
+                <CheckCircle2 className="h-8 w-8 mx-auto text-green-400" />
+                <div className="font-display text-xl text-gold-gradient">Dispute resolved</div>
+                <div className="text-xs text-muted-foreground">
+                  Escrow #{escrowId} — Winner: {execution.winner === "0x0000000000000000000000000000000000000000" ? "Split" : execution.winner?.slice(0, 10) + "…"}
+                  <br />
+                  Status: {execution.status === "refunded" ? "Refunded to client" : execution.status}
+                </div>
+                <button onClick={reset} className="text-xs text-gold-soft hover:text-foreground underline underline-offset-2">Start new dispute</button>
+              </div>
+            </div>
+          )}
 
           {txHash && (
             <div className="rounded-xl border border-gold/20 p-3 text-xs space-y-1">
-              <div className="text-gold-soft uppercase tracking-wider">Transaction</div>
+              <div className="text-gold-soft uppercase tracking-wider">Tx</div>
               <a href={`https://explorer-bradbury.genlayer.com/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-marble underline underline-offset-2 break-all">{txHash.slice(0, 20)}…{txHash.slice(-8)}</a>
               {disputeId && <div className="text-muted-foreground">Dispute #{disputeId.toString()}</div>}
             </div>
           )}
 
-          {disputeId && !result && (
-            <button onClick={checkResult} className="inline-flex items-center gap-1.5 text-xs text-gold-soft hover:text-foreground">
-              <ExternalLink className="h-3 w-3" /> Check dispute result
-            </button>
-          )}
-
-          {result && (
-            <div className="rounded-xl border border-gold/20 p-4 space-y-2">
-              <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Result</div>
-              <div className={`text-lg font-display ${result.verdict === "client" ? "text-destructive" : "text-green-400"}`}>
-                {result.verdict === "client" ? "Client wins" : result.verdict === "freelancer" ? "Freelancer wins" : "Split"}
-              </div>
-              {result.juror_votes?.length > 0 && (
-                <div className="space-y-1">
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Juror votes ({result.juror_votes.length})</div>
-                  <div className="flex gap-1">
-                    {result.juror_votes.map((v: any, i: number) => (
-                      <span key={i} className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono ${
-                        v.vote === "client" ? "bg-destructive/10 text-destructive" :
-                        v.vote === "freelancer" ? "bg-green-400/10 text-green-400" :
-                        "bg-gold/10 text-gold-soft"
-                      }`}>{v.vote}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {txError && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">{txError}</div>
-          )}
-
-          <div className="rounded-xl border border-gold/20 p-4">
-            <div className="mb-4 text-xs uppercase tracking-[0.25em] text-gold-soft">Validator jury (5 seats)</div>
-            <div className="flex justify-around">
-              {result?.juror_votes?.length > 0 ? (
-                result.juror_votes.map((v: any, i: number) => (
-                  <div key={i} className="flex flex-col items-center gap-2">
-                    <div className={`grid h-14 w-14 place-items-center rounded-full border transition-all ${
-                      v.vote === "pending" ? "border-gold/20 text-muted-foreground" :
-                      v.vote === "freelancer" ? "border-gold/60 bg-gold/15 text-marble" :
-                      "border-destructive/50 bg-destructive/10 text-destructive"
-                    }`}>
-                      {v.vote === "pending" ? <Sparkles className="h-5 w-5 animate-pulse" /> :
-                       v.vote === "freelancer" ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
-                    </div>
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">V{i + 1}</div>
-                  </div>
-                ))
-              ) : phase === "voting" ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex flex-col items-center gap-2">
-                    <div className="grid h-14 w-14 place-items-center rounded-full border border-gold/20 text-muted-foreground">
-                      <Sparkles className="h-5 w-5 animate-pulse" />
-                    </div>
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">V{i + 1}</div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-xs text-muted-foreground py-4">No dispute opened yet. Fill the fields and click "Open dispute".</div>
-              )}
-            </div>
-            {phase === "verdict" && result && (
-              <div className="mt-6 text-center">
-                <div className="font-display text-2xl text-gold-gradient">
-                  Verdict: {result.verdict === "client" ? "Client" : result.verdict === "freelancer" ? "Freelancer" : "Split"} wins
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">Resolved by AI dispute resolution.</p>
-              </div>
-            )}
-          </div>
+          {error && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">{error}</div>}
         </div>
       }
       right={
         <div className="flex h-full flex-col items-center justify-center text-center">
-          <RomanCandle active={phase === "voting"} durationMs={6000} label="Processing dispute" size="lg" />
+          <RomanCandle active={step !== "open" && step !== "done"} durationMs={8000} label="Dispute flow" size="lg" />
           <div className="mt-4 text-xs uppercase tracking-[0.25em] text-muted-foreground">
-            {phase === "voting" ? "Opening dispute on-chain" : phase === "verdict" ? "Verdict rendered" : "Awaiting dispute"}
+            {step === "open" ? "Awaiting dispute" : step === "votes" ? "Jurors voting" : step === "resolve" ? "AI deliberating" : step === "execute" ? "Ready to execute" : "Resolved"}
           </div>
+          <p className="mt-2 max-w-[200px] text-[10px] text-muted-foreground">
+            {step === "open" ? "Fill the dispute details and open it on-chain." :
+             step === "votes" ? `${juryVotes.length}/5 jurors have voted.` :
+             step === "resolve" ? "AI synthesizes evidence and votes into a binding verdict." :
+             step === "execute" ? "Execute to atomically release funds to the winner." :
+             "Funds released. Escrow closed."}
+          </p>
         </div>
       }
     />
   );
 }
-
-// ─── 6. Reputation ──────────────────────────────────────────────────────────
 
 function HistoryDemo() {
   const { account, connected } = useWallet();
