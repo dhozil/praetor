@@ -41,5 +41,5 @@ export const FAUCET_URL = "https://testnet-faucet.genlayer.foundation";
  */
 export const CONTRACTS = {
   // Deploy PraetorV2 via: genlayer deploy --contract contracts/praetor_v2.py --rpc https://rpc-bradbury.genlayer.com --args 2
-  praetor: "0x75E095CC5820e989Ffa3E17bF7cF6db3ea593980" as `0x${string}`,
+  praetor: "0x470916EE2F2953346Fd55D431FC7D2ceF90F9D85" as `0x${string}`,
 } as const;
