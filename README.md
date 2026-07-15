@@ -69,7 +69,7 @@ When a milestone is rejected, either party can open a dispute. Both submit state
 
 ## Smart Contract
 
-Written in Python using `py-genlayer`. Deployed at **`0x75E095CC5820e989Ffa3E17bF7cF6db3ea593980`**.
+Written in Python using `py-genlayer`. Deployed at **`0x470916EE2F2953346Fd55D431FC7D2ceF90F9D85`**.
 
 ### View Functions
 
@@ -102,6 +102,8 @@ Written in Python using `py-genlayer`. Deployed at **`0x75E095CC5820e989Ffa3E17b
 | `open_dispute(...)` | Either party opens a dispute with statements + evidence |
 | `cast_juror_vote(disputeId, vote, reasoning)` | Juror votes (client/freelancer/split) |
 | `resolve_dispute(disputeId)` | AI aggregates juror votes into final verdict |
+| `execute_dispute_verdict(disputeId)` | Releases funds to winner per verdict, closes escrow |
+| `get_dispute_counter()` | Current dispute count |
 
 ### AI Verification Flow
 
@@ -125,7 +127,7 @@ Written in Python using `py-genlayer`. Deployed at **`0x75E095CC5820e989Ffa3E17b
 | **Dashboard** | Role toggle (client/freelancer). See your jobs, escrows, applicants, milestones. Assign freelancer directly. |
 | **AI Verify** | Pick an escrow + milestone. Attach evidence (URLs, types). See AI consensus step-by-step: leader proposes → validators check → result rendered. |
 | **Release** | Select escrow + milestone. Client releases payment after verification passes. |
-| **Dispute** | Enter escrow + both party statements. "Convene the jury" sends a transaction. On-chain, AI jurors vote and resolve. |
+| **Dispute** | End-to-end flow: Open dispute → cast 5 juror votes → AI resolution → execute verdict (funds released on-chain). Built-in random fill examples. |
 | **History** | Completed jobs grouped by role. Milestone breakdown, escrow status, verification results. |
 | **Reputation** | Look up any wallet's on-chain Praetor score and completed job count. |
 
@@ -142,7 +144,7 @@ bun run build        # Production build → .output/
 ### Prerequisites
 - [MetaMask](https://metamask.io/) with GenLayer Snap installed (auto-prompted on first write)
 - A wallet funded with GEN on Bradbury (use [faucet](https://faucet-bradbury.genlayer.com))
-- Contract already deployed at `0x75E095CC5820e989Ffa3E17bF7cF6db3ea593980`
+- Contract deployed at `0x470916EE2F2953346Fd55D431FC7D2ceF90F9D85`
 
 ---
 
