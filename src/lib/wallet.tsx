@@ -118,13 +118,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const handleChainChanged = useCallback((cid: string) => setChainId(cid), []);
 
-  const BRADBURY_CHAIN_ID = "0x107d";
+  const STUDIO_CHAIN_ID = "0xf22f";
 
-  const switchToBradbury = useCallback(async (provider: Eip1193Provider) => {
+  const switchToStudio = useCallback(async (provider: Eip1193Provider) => {
     try {
       await provider.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: BRADBURY_CHAIN_ID }],
+        params: [{ chainId: STUDIO_CHAIN_ID }],
       });
     } catch (err: unknown) {
       const error = err as { code?: number };
@@ -133,11 +133,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           method: "wallet_addEthereumChain",
           params: [
             {
-              chainId: BRADBURY_CHAIN_ID,
-              chainName: "GenLayer Bradbury",
-              rpcUrls: ["https://rpc-bradbury.genlayer.com"],
+              chainId: STUDIO_CHAIN_ID,
+              chainName: "Genlayer Studio Network",
+              rpcUrls: ["https://studio.genlayer.com/api"],
               nativeCurrency: { name: "GEN Token", symbol: "GEN", decimals: 18 },
-              blockExplorerUrls: ["https://explorer-bradbury.genlayer.com"],
+              blockExplorerUrls: ["https://explorer-studio.genlayer.com"],
             },
           ],
         });
@@ -155,8 +155,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         })) as string[];
         const cid = (await wallet.provider.request({ method: "eth_chainId" })) as string;
 
-        if (cid !== BRADBURY_CHAIN_ID) {
-          await switchToBradbury(wallet.provider);
+        if (cid !== STUDIO_CHAIN_ID) {
+          await switchToStudio(wallet.provider);
         }
 
         const finalChainId = (await wallet.provider.request({ method: "eth_chainId" })) as string;
@@ -167,7 +167,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         try { localStorage.setItem(LS_KEY, wallet.rdns); } catch { /* noop */ }
 
         wallet.provider.on?.("accountsChanged", handleAccountsChanged as (...a: unknown[]) => void);
-        wallet.provider.on?.("chainChanged", handleChainChanged as (...a: unknown[]) => void);
+        wallet.provider.on?.("chainChanged", handleChainChanged as (...a: unknown[]) to void);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Connection rejected";
         setError(msg);
@@ -175,7 +175,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setIsConnecting(false);
       }
     },
-    [handleAccountsChanged, handleChainChanged, switchToBradbury],
+    [handleAccountsChanged, handleChainChanged, switchToStudio],
   );
 
   const disconnect = useCallback(() => {

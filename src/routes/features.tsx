@@ -1409,7 +1409,7 @@ function DisputeDemo() {
           {txHash && (
             <div className="rounded-xl border border-gold/20 p-3 text-xs space-y-1">
               <div className="text-gold-soft uppercase tracking-wider">Tx</div>
-              <a href={`https://explorer-bradbury.genlayer.com/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-marble underline underline-offset-2 break-all">{txHash.slice(0, 20)}…{txHash.slice(-8)}</a>
+              <a href={`https://explorer-studio.genlayer.com/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-marble underline underline-offset-2 break-all">{txHash.slice(0, 20)}…{txHash.slice(-8)}</a>
               {disputeId && <div className="text-muted-foreground">Dispute #{disputeId.toString()}</div>}
             </div>
           )}

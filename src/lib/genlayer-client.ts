@@ -1,5 +1,5 @@
 import { createClient } from "genlayer-js";
-import { testnetBradbury } from "genlayer-js/chains";
+import { studionet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 import { CONTRACTS, FAUCET_URL } from "./genlayer-network";
 
@@ -19,7 +19,7 @@ export function getWriteClient(walletAddress: string, provider: any) {
     return writeClientCache.client;
 
   const client = createClient({
-    chain: testnetBradbury,
+    chain: studionet,
     account: walletAddress as `0x${string}`,
     provider,
   });
@@ -29,7 +29,7 @@ export function getWriteClient(walletAddress: string, provider: any) {
 }
 
 export const readClient = createClient({
-  chain: testnetBradbury,
+  chain: studionet,
 });
 
 // ─── Global rate limiter (batches reads with minimal delay) ────────────
@@ -105,13 +105,13 @@ export function resetWriteClient() {
 
 // ─── Network ────────────────────────────────────────────────────────────────
 
-export async function switchToBradbury(provider: {
+export async function switchToStudio(provider: {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 }): Promise<boolean> {
   try {
     await provider.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: "0x107d" }],
+      params: [{ chainId: "0xf22f" }],
     });
     return true;
   } catch (switchError: unknown) {
@@ -122,11 +122,11 @@ export async function switchToBradbury(provider: {
           method: "wallet_addEthereumChain",
           params: [
             {
-              chainId: "0x107d",
-              chainName: "GenLayer Bradbury",
-              rpcUrls: ["https://rpc-bradbury.genlayer.com"],
+              chainId: "0xf22f",
+              chainName: "Genlayer Studio Network",
+              rpcUrls: ["https://studio.genlayer.com/api"],
               nativeCurrency: { name: "GEN Token", symbol: "GEN", decimals: 18 },
-              blockExplorerUrls: ["https://explorer-bradbury.genlayer.com"],
+              blockExplorerUrls: ["https://explorer-studio.genlayer.com"],
             },
           ],
         });
@@ -519,5 +519,5 @@ export async function waitForReceipt(
 }
 
 export function openFaucet() {
-  window.open(FAUCET_URL, "_blank", "noopener");
+  if (FAUCET_URL) window.open(FAUCET_URL, "_blank", "noopener");
 }

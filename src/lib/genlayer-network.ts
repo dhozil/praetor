@@ -1,45 +1,39 @@
 /**
- * GenLayer Bradbury Testnet Configuration
- *
- * Network details: https://docs.genlayer.com/developers/networks
+ * GenLayer Studionet Configuration
  */
 
-export const GENLAYER_BRADBURY = {
-  id: 4221,
-  name: "GenLayer Bradbury",
+export const GENLAYER_STUDIO = {
+  id: 61999,
+  name: "Genlayer Studio Network",
   nativeCurrency: {
     name: "GEN Token",
     symbol: "GEN",
     decimals: 18,
   },
   rpcUrls: {
-    default: { http: ["https://rpc-bradbury.genlayer.com"] },
-    genLayer: { http: ["https://rpc-bradbury.genlayer.com"] },
-    chain: { http: ["https://rpc.testnet-chain.genlayer.com"] },
+    default: { http: ["https://studio.genlayer.com/api"] },
   },
   blockExplorers: {
-    default: { name: "GenLayer Explorer", url: "https://explorer-bradbury.genlayer.com" },
-    chain: { name: "GenLayer Chain Explorer", url: "https://explorer.testnet-chain.genlayer.com" },
+    default: { name: "GenLayer Explorer", url: "https://explorer-studio.genlayer.com" },
   },
 } as const;
 
-export const GENLAYER_BRADBURY_HEX = "0x107d";
+export const GENLAYER_STUDIO_HEX = "0xf22f";
 
-export const ADD_BRADBURY_TO_WALLET = {
-  chainId: GENLAYER_BRADBURY_HEX,
-  chainName: GENLAYER_BRADBURY.name,
-  rpcUrls: GENLAYER_BRADBURY.rpcUrls.default.http,
-  nativeCurrency: GENLAYER_BRADBURY.nativeCurrency,
-  blockExplorerUrls: [GENLAYER_BRADBURY.blockExplorers.default.url],
+export const ADD_STUDIO_TO_WALLET = {
+  chainId: GENLAYER_STUDIO_HEX,
+  chainName: GENLAYER_STUDIO.name,
+  rpcUrls: GENLAYER_STUDIO.rpcUrls.default.http,
+  nativeCurrency: GENLAYER_STUDIO.nativeCurrency,
+  blockExplorerUrls: [GENLAYER_STUDIO.blockExplorers.default.url],
 };
 
-export const FAUCET_URL = "https://testnet-faucet.genlayer.foundation";
+export const FAUCET_URL = ""; // Built-in faucet in Studio account selector
 
 /**
- * Contract addresses on Bradbury testnet
- * Update these after deploying contracts via GenLayer Studio or CLI
+ * Contract addresses on Studionet
+ * Deploy via: genlayer deploy --contract contracts/praetor.py --rpc https://studio.genlayer.com/api --args 2
  */
 export const CONTRACTS = {
-  // Deploy PraetorV2 via: genlayer deploy --contract contracts/praetor_v2.py --rpc https://rpc-bradbury.genlayer.com --args 2
-  praetor: "0x470916EE2F2953346Fd55D431FC7D2ceF90F9D85" as `0x${string}`,
+  praetor: "0x470916EE2F2953346Fd55D431FC7D2ceF90F9D85" as `0x${string}`, // TODO: update after redeploy to studionet
 } as const;
