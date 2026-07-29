@@ -1,66 +1,54 @@
-import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
+import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 import { CONTRACTS, FAUCET_URL } from "./genlayer-network";
 
 const PRAETOR_ADDRESS = CONTRACTS.praetor;
+const STUDIO_RPC = "https://studio.genlayer.com/api";
 
-// ─── Local GenLayer account (for writes — MetaMask can't send txs on GenLayer) ──
-const LOCAL_KEY_STORAGE = "praetor:local-key";
+// ─── GenLayer HTTP provider (bypasses MetaMask for eth_sendTransaction) ──
+// MetaMask sends standard EVM JSON-RPC which GenLayer's Studio API doesn't
+// understand. This provider sends requests directly as HTTP JSON-RPC.
+const genlayerProvider = {
+  request: async ({ method, params }: { method: string; params?: unknown[] }) => {
+    const res = await fetch(STUDIO_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
+    });
+    const json = await res.json();
+    if (json.error) {
+      const err = new Error(json.error.message || "RPC error");
+      (err as any).code = json.error.code;
+      (err as any).data = json.error.data;
+      throw err;
+    }
+    return json.result;
+  },
+};
 
-let localAccountCache: ReturnType<typeof createAccount> | null = null;
+let writeClientCache: {
+  address: string;
+  client: ReturnType<typeof createClient>;
+} | null = null;
 
-function getLocalAccount(): ReturnType<typeof createAccount> {
-  if (localAccountCache) return localAccountCache;
-  const stored = localStorage.getItem(LOCAL_KEY_STORAGE);
-  const privKey: `0x${string}` = stored
-    ? (stored as `0x${string}`)
-    : (() => {
-        const k = generatePrivateKey();
-        try { localStorage.setItem(LOCAL_KEY_STORAGE, k); } catch { /* noop */ }
-        return k;
-      })();
-  localAccountCache = createAccount(privKey);
-  return localAccountCache;
-}
-
-export function getLocalAccountAddress(): string {
-  return getLocalAccount().address;
-}
-
-let writeClient: ReturnType<typeof createClient> | null = null;
-
-export function getWriteClient() {
-  if (writeClient) return writeClient;
-  writeClient = createClient({
+export function getWriteClient(walletAddress: string) {
+  if (writeClientCache?.address === walletAddress) return writeClientCache.client;
+  const client = createClient({
     chain: studionet,
-    account: getLocalAccount(),
+    account: walletAddress as `0x${string}`,
+    provider: genlayerProvider,
   });
-  return writeClient;
+  writeClientCache = { address: walletAddress, client };
+  return client;
 }
 
 export const readClient = createClient({
   chain: studionet,
 });
 
-// ─── Global rate limiter (batches reads with minimal delay) ────────────
-let pendingBatch: (() => Promise<void>)[] | null = null;
-let batchTimer: ReturnType<typeof setTimeout> | null = null;
-
-async function throttledContractCall<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fn();
-    } catch (e: any) {
-      const msg = e?.message || e?.cause || "";
-      if (msg.includes("rate limit") && attempt < retries) {
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw new Error("rate limit exceeded after retries");
+export function resetWriteClient() {
+  writeClientCache = null;
 }
 
 // ─── LocalStorage cache (2min TTL) ─────────────────────────────────────
@@ -110,11 +98,6 @@ export function invalidateAllCache(): void {
 
 export function invalidateMarketplaceCache(): void { localStorage.removeItem(CACHE_PREFIX + "marketplace"); }
 
-export function resetWriteClient() {
-  writeClient = null;
-  localAccountCache = null;
-}
-
 // ─── Network ────────────────────────────────────────────────────────────────
 
 export async function switchToStudio(provider: {
@@ -153,17 +136,20 @@ export async function switchToStudio(provider: {
 
 // ─── Marketplace Write ──────────────────────────────────────────────────────
 
-export async function postJob(params: {
-  title: string;
-  description: string;
-  milestoneTitles: string[];
-  milestoneDescriptions: string[];
-  milestoneAmounts: bigint[];
-  evidenceTypes: string[];
-  requirements: string;
-  value: bigint;
-}): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+export async function postJob(
+  walletAddress: string,
+  params: {
+    title: string;
+    description: string;
+    milestoneTitles: string[];
+    milestoneDescriptions: string[];
+    milestoneAmounts: bigint[];
+    evidenceTypes: string[];
+    requirements: string;
+    value: bigint;
+  },
+): Promise<string> {
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "post_job",
     args: [
@@ -180,8 +166,11 @@ export async function postJob(params: {
   return txHash as string;
 }
 
-export async function applyJob(jobId: bigint): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+export async function applyJob(
+  walletAddress: string,
+  jobId: bigint,
+): Promise<string> {
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "apply_job",
     args: [jobId],
@@ -191,10 +180,11 @@ export async function applyJob(jobId: bigint): Promise<string> {
 }
 
 export async function assignFreelancer(
+  walletAddress: string,
   jobId: bigint,
   freelancerAddress: string,
 ): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "assign_freelancer",
     args: [jobId, freelancerAddress],
@@ -206,11 +196,12 @@ export async function assignFreelancer(
 // ─── Escrow Write ───────────────────────────────────────────────────────────
 
 export async function submitEvidence(
+  walletAddress: string,
   escrowId: bigint,
   milestoneIndex: bigint,
   evidenceUrl: string,
 ): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "submit_evidence",
     args: [escrowId, milestoneIndex, evidenceUrl],
@@ -220,10 +211,11 @@ export async function submitEvidence(
 }
 
 export async function releasePayment(
+  walletAddress: string,
   escrowId: bigint,
   milestoneIndex: bigint,
 ): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "release_payment",
     args: [escrowId, milestoneIndex],
@@ -232,16 +224,19 @@ export async function releasePayment(
   return txHash as string;
 }
 
-export async function verifyMilestone(params: {
-  escrowId: bigint;
-  milestoneIndex: bigint;
-  evidenceUrls: string[];
-  evidenceTypes: string[];
-  jobDescription: string;
-  milestoneTitle: string;
-  milestoneDescription: string;
-}): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+export async function verifyMilestone(
+  walletAddress: string,
+  params: {
+    escrowId: bigint;
+    milestoneIndex: bigint;
+    evidenceUrls: string[];
+    evidenceTypes: string[];
+    jobDescription: string;
+    milestoneTitle: string;
+    milestoneDescription: string;
+  },
+): Promise<string> {
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "verify_milestone",
     args: [
@@ -261,6 +256,7 @@ export async function verifyMilestone(params: {
 // ─── Dispute Write ──────────────────────────────────────────────────────────
 
 export async function openDispute(
+  walletAddress: string,
   escrowId: bigint,
   milestoneIndex: bigint,
   clientStatement: string,
@@ -268,7 +264,7 @@ export async function openDispute(
   freelancerStatement: string,
   freelancerEvidence: string[],
 ): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "open_dispute",
     args: [escrowId, milestoneIndex, clientStatement, clientEvidence, freelancerStatement, freelancerEvidence],
@@ -278,11 +274,12 @@ export async function openDispute(
 }
 
 export async function castJurorVote(
+  walletAddress: string,
   disputeId: bigint,
   vote: string,
   reasoning: string,
 ): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "cast_juror_vote",
     args: [disputeId, vote, reasoning],
@@ -291,8 +288,11 @@ export async function castJurorVote(
   return txHash as string;
 }
 
-export async function resolveDispute(disputeId: bigint): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+export async function resolveDispute(
+  walletAddress: string,
+  disputeId: bigint,
+): Promise<string> {
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "resolve_dispute",
     args: [disputeId],
@@ -301,8 +301,11 @@ export async function resolveDispute(disputeId: bigint): Promise<string> {
   return txHash as string;
 }
 
-export async function executeDisputeVerdict(disputeId: bigint): Promise<string> {
-  const txHash = await getWriteClient().writeContract({
+export async function executeDisputeVerdict(
+  walletAddress: string,
+  disputeId: bigint,
+): Promise<string> {
+  const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "execute_dispute_verdict",
     args: [disputeId],
@@ -312,6 +315,22 @@ export async function executeDisputeVerdict(disputeId: bigint): Promise<string> 
 }
 
 // ─── Marketplace Read ───────────────────────────────────────────────────────
+
+async function throttledContractCall<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      const msg = e?.message || e?.cause || "";
+      if (msg.includes("rate limit") && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error("rate limit exceeded after retries");
+}
 
 function cachedRead<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const cached = cacheGet<T>(key);
@@ -426,9 +445,7 @@ export async function getVerification(
   return result as any;
 }
 
-export async function getDispute(
-  disputeId: bigint,
-): Promise<any> {
+export async function getDispute(disputeId: bigint): Promise<any> {
   const result = await cachedRead("dispute:" + disputeId.toString(), () =>
     readClient.readContract({
       address: PRAETOR_ADDRESS,

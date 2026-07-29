@@ -167,7 +167,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         try { localStorage.setItem(LS_KEY, wallet.rdns); } catch { /* noop */ }
 
         wallet.provider.on?.("accountsChanged", handleAccountsChanged as (...a: unknown[]) => void);
-        wallet.provider.on?.("chainChanged", handleChainChanged as (...a: unknown[]) to void);
+        wallet.provider.on?.("chainChanged", handleChainChanged as (...a: unknown[]) => void);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Connection rejected";
         setError(msg);
