@@ -69,7 +69,7 @@ When a milestone is rejected, either party can open a dispute. Both submit state
 
 ## Smart Contract
 
-Written in Python using `py-genlayer`. Deployed at **`0x470916EE2F2953346Fd55D431FC7D2ceF90F9D85`**.
+Written in Python using `py-genlayer`. Deployed on Studionet at **`0x616829166C487d12254898f1BD615Fd5FBcDCb2d`**.
 
 ### View Functions
 
@@ -144,7 +144,7 @@ bun run build        # Production build → .output/
 ### Prerequisites
 - [MetaMask](https://metamask.io/) with GenLayer Snap installed (auto-prompted on first write)
 - A wallet funded with GEN on Bradbury (use [faucet](https://faucet-bradbury.genlayer.com))
-- Contract deployed at `0x470916EE2F2953346Fd55D431FC7D2ceF90F9D85`
+- Contract deployed on Studionet at `0x616829166C487d12254898f1BD615Fd5FBcDCb2d`
 
 ---
 
