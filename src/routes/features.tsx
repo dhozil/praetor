@@ -343,10 +343,7 @@ function MarketplaceDemo() {
       setRequirements("");
       invalidateAllCache();
       await refresh();
-    } catch {
-      invalidateAllCache();
-      await refresh();
-    }
+    } catch { /* tx failed */ }
     setPosting(false);
   };
 
@@ -358,10 +355,7 @@ function MarketplaceDemo() {
       await waitForReceipt(txHash);
       invalidateAllCache();
       await refresh();
-    } catch {
-      invalidateAllCache();
-      await refresh();
-    }
+    } catch { /* failed */ }
     setApplyLoading(null);
   };
 
@@ -988,7 +982,6 @@ function VerifyDemo() {
                   placeholder="Escrow ID (manual)"
                 />
                 <button onClick={() => loadEscrow()} className="btn-ghost-gold rounded-lg px-3 text-xs hover:bg-gold/10">Load</button>
-                <button onClick={() => { setEscrowId("1"); setMilestoneIndex("0"); setJobDescription("Build a DeFi Dashboard with live price feeds and wallet connect"); setMilestoneTitle("Design UI/UX mockups"); setMilestoneDescription("Create Figma mockups for all screens"); setItems([{ id: crypto.randomUUID(), type: "GitHub", url: "https://github.com/example/defi-dashboard", icon: Github }, { id: crypto.randomUUID(), type: "Figma", url: "https://figma.com/file/abc123", icon: ImageIcon }]); }} type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors"><Sparkles className="h-3 w-3" /> Fill example</button>
               </div>
             )}
 
@@ -1153,7 +1146,6 @@ function ReleaseDemo() {
             <div className="flex gap-2">
               <input value={escrowId} onChange={(e) => setEscrowId(e.target.value)} className="input flex-1" placeholder="Escrow ID" />
               <input value={milestoneIndex} onChange={(e) => setMilestoneIndex(e.target.value)} className="input w-20" placeholder="MS #" />
-              <button onClick={() => { setEscrowId("1"); setMilestoneIndex("0"); }} type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors"><Sparkles className="h-3 w-3" /> Fill</button>
             </div>
           </div>
 
