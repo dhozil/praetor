@@ -4,11 +4,11 @@ import { TransactionStatus } from "genlayer-js/types";
 import { CONTRACTS, FAUCET_URL } from "./genlayer-network";
 
 const PRAETOR_ADDRESS = CONTRACTS.praetor;
-const STUDIO_RPC = "https://studio.genlayer.com/api";
+const PROXY_RPC = "/api/rpc";
 
-// ─── GenLayer HTTP provider ──
-// Routes eth_sendTransaction through the injected wallet (Rabby/MetaMask) for
-// signing; sends all other methods (reads) directly to the Studio API via HTTP.
+// ─── GenLayer provider ──
+// eth_sendTransaction → injected wallet (Rabby/MetaMask) for signing
+// Other methods → fallback to same-origin proxy (bypasses CORS)
 const PROVIDER_METHODS = new Set([
   "eth_accounts",
   "eth_requestAccounts",
@@ -24,7 +24,7 @@ const genlayerProvider = {
       if (!wallet) throw new Error("No wallet (Rabby/MetaMask) detected — install a browser wallet to send transactions.");
       return wallet.request({ method, params });
     }
-    const res = await fetch(STUDIO_RPC, {
+    const res = await fetch(PROXY_RPC, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
@@ -51,6 +51,7 @@ export function getWriteClient(walletAddress: string) {
     chain: studionet,
     account: walletAddress as `0x${string}`,
     provider: genlayerProvider,
+    endpoint: "/api/rpc",
   });
   writeClientCache = { address: walletAddress, client };
   return client;
@@ -58,6 +59,7 @@ export function getWriteClient(walletAddress: string) {
 
 export const readClient = createClient({
   chain: studionet,
+  endpoint: "/api/rpc",
 });
 
 export function resetWriteClient() {

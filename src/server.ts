@@ -39,6 +39,29 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    // CORS proxy: forward /api/rpc requests to Studio API
+    const url = new URL(request.url);
+    if (url.pathname === "/api/rpc" && request.method === "POST") {
+      try {
+        const body = await request.text();
+        const res = await fetch("https://studio.genlayer.com/api", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        const data = await res.text();
+        return new Response(data, {
+          status: res.status,
+          headers: { "content-type": "application/json" },
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: { message: String(err) } }), {
+          status: 502,
+          headers: { "content-type": "application/json" },
+        });
+      }
+    }
+
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
