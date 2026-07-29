@@ -385,7 +385,7 @@ function MarketplaceDemo() {
                 <textarea value={desc} onChange={(e) => setDesc(e.target.value)} className="input resize-none" rows={2} placeholder="Describe the work needed" />
               </Field>
               <Field label="Total budget (GEN)">
-                <input type="number" step="any" value={budget} onChange={(e) => { const v = e.target.value; setBudget(v === "" ? "" : v); }} className="input" placeholder="e.g. 5000" />
+                <input type="number" min="0" step="any" value={budget} onChange={(e) => { const v = e.target.value; if (v === "" || parseFloat(v) >= 0) setBudget(v === "" ? "" : v); }} className="input" placeholder="e.g. 0.5" />
               </Field>
               <button
                 onClick={() => {
