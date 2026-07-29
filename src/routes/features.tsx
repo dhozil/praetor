@@ -343,7 +343,10 @@ function MarketplaceDemo() {
       setRequirements("");
       invalidateAllCache();
       await refresh();
-    } catch { /* tx failed */ }
+    } catch {
+      invalidateAllCache();
+      await refresh();
+    }
     setPosting(false);
   };
 
@@ -355,7 +358,10 @@ function MarketplaceDemo() {
       await waitForReceipt(txHash);
       invalidateAllCache();
       await refresh();
-    } catch { /* failed */ }
+    } catch {
+      invalidateAllCache();
+      await refresh();
+    }
     setApplyLoading(null);
   };
 
