@@ -690,35 +690,54 @@ function DashboardDemo() {
                     >
                       <span className="font-mono text-gold-soft shrink-0">#{id.toString()}</span>
                       <span className="flex-1 truncate text-marble font-medium">{job?.title || "…"}</span>
+                      {job && <span className="text-muted-foreground shrink-0">{Number(job.total_budget || 0n) / 1e18} GEN</span>}
                       <Badge status={job?.status || "open"} />
                       {role === "client" && job?.status === "open" && applicants.has(id.toString()) && (
-                        <span className="shrink-0 text-gold-soft text-[10px]">{applicants.get(id.toString())?.length || 0} applicant{(applicants.get(id.toString())?.length || 0) !== 1 ? "s" : ""}</span>
+                        <span className="shrink-0 text-gold-soft text-[10px]">{applicants.get(id.toString())?.length || 0} app</span>
                       )}
-                      {escrow && <span className={escrow.status === "active" ? "text-green-400" : "text-muted-foreground"}>{escrow.milestones?.filter((m: any) => m.verified).length || 0}/{escrow.milestones?.length || 0}</span>}
+                      {escrow && <span className="text-muted-foreground">{escrow.milestones?.filter((m: any) => m.status === "verified" || m.status === "paid").length || 0}/{escrow.milestones?.length || 0} done</span>}
                     </button>
                     {expanded === id && job && (
                       <div className="px-3 pb-3 space-y-2 text-xs">
                         <p className="text-marble">{job.description}</p>
-                        <div className="flex gap-4 text-muted-foreground">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
                           <span>Budget: <span className="text-gold-soft">{Number(job.total_budget) / 1e18} GEN</span></span>
                           <span>Status: <Badge status={job.status} /></span>
+                          {job.milestone_titles?.length > 0 && (
+                            <span>Milestones: <span className="text-marble">{job.milestone_titles.length}</span></span>
+                          )}
                           {job.assigned_freelancer && job.assigned_freelancer !== "0x0000000000000000000000000000000000000000" && (
                             <span>Freelancer: <span className="font-mono text-marble">{job.assigned_freelancer.slice(0, 6)}…{job.assigned_freelancer.slice(-4)}</span></span>
                           )}
                         </div>
+                        {/* Milestone list from JobPosting */}
+                        {job.milestone_titles?.length > 0 && (
+                          <div className="rounded-lg border border-gold/15 bg-black/20 p-3 space-y-1">
+                            <div className="text-gold-soft uppercase tracking-wider text-[10px]">Milestones</div>
+                            {job.milestone_titles.map((title: string, i: number) => {
+                              const amount = job.milestone_amounts?.[i] || 0n;
+                              const msEscrow = escrow?.milestones?.[i];
+                              return (
+                                <div key={i} className="flex items-center justify-between py-0.5">
+                                  <span className="text-marble">{title}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-muted-foreground">{Number(amount) / 1e18} GEN</span>
+                                    {msEscrow && <Badge status={msEscrow.status} />}
+                                    {msEscrow?.ai_score > 0 && <span className="text-gold-soft">{msEscrow.ai_score}/100</span>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {/* Escrow details */}
                         {escrow && (
                           <div className="rounded-lg border border-gold/15 bg-black/20 p-3 space-y-1">
                             <div className="text-gold-soft uppercase tracking-wider text-[10px]">Escrow</div>
-                            {escrow.milestones?.map((ms: any, i: number) => (
-                              <div key={i} className="flex items-center justify-between">
-                                <span className="text-marble">{ms.title || `Milestone ${i + 1}`}</span>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground">{Number(ms.amount) / 1e18} GEN</span>
-                                  <Badge status={ms.status} />
-                                  {ms.ai_score > 0 && <span className="text-gold-soft">{ms.ai_score}/100</span>}
-                                </div>
-                              </div>
-                            ))}
+                            <div className="flex justify-between text-muted-foreground">
+                              <span>ID: <span className="font-mono text-marble">{escrow.job_id?.toString()}</span></span>
+                              <span>Status: <Badge status={escrow.status} /></span>
+                            </div>
                           </div>
                         )}
                         {/* Applicants for client open jobs */}
