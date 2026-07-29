@@ -13,6 +13,8 @@ import {
   FileText,
   Image as ImageIcon,
   Wallet,
+  Copy,
+  Check,
   Sparkles,
   CheckCircle2,
   XCircle,
@@ -30,7 +32,7 @@ import {
 } from "lucide-react";
 import { RomanCandle } from "@/components/RomanCandle";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
-import { useWallet } from "@/lib/wallet";
+import { useWallet, shortAddr } from "@/lib/wallet";
 import {
   postJob,
   applyJob,
@@ -55,6 +57,7 @@ import {
   resolveDispute,
   executeDisputeVerdict,
   waitForReceipt,
+  getLocalAccountAddress,
 } from "@/lib/genlayer-client";
 import shieldImg from "@/assets/gold-shield.png";
 
@@ -88,6 +91,16 @@ const features: {
 
 function FeaturesPage() {
   const [active, setActive] = useState<FeatureKey>("marketplace");
+  const [copiedLocal, setCopiedLocal] = useState(false);
+  const localAddr = getLocalAccountAddress();
+
+  const copyLocal = async () => {
+    try {
+      await navigator.clipboard.writeText(localAddr);
+      setCopiedLocal(true);
+      setTimeout(() => setCopiedLocal(false), 1400);
+    } catch { /* noop */ }
+  };
 
   return (
     <div className="relative h-screen overflow-hidden flex flex-col">
@@ -99,7 +112,17 @@ function FeaturesPage() {
           >
             <ArrowLeft className="h-4 w-4" /> Back to home
           </Link>
-          <ConnectWalletButton />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={copyLocal}
+              className="inline-flex items-center gap-1.5 rounded-full border border-gold/30 bg-gold/5 px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-gold/10"
+              title={localAddr}
+            >
+              <span className="font-mono">{shortAddr(localAddr)}</span>
+              {copiedLocal ? <Check className="h-3 w-3 text-gold-soft" /> : <Copy className="h-3 w-3 opacity-60" />}
+            </button>
+            <ConnectWalletButton />
+          </div>
         </div>
 
         <div className="mt-2 flex items-end justify-between gap-4 shrink-0">
@@ -275,8 +298,8 @@ function AssignFreelancerInput({ onAssign }: { onAssign: (addr: string) => Promi
 // ─── 1. Marketplace ─────────────────────────────────────────────────────────
 
 function MarketplaceDemo() {
-  const { account, connected } = useWallet();
-  const wallet = connected;
+  const { connected: wallet } = useWallet();
+  const account = getLocalAccountAddress();
   const [openJobIds, setOpenJobIds] = useState<bigint[]>([]);
   const [jobs, setJobs] = useState<Map<string, any>>(new Map());
   const [applicants, setApplicants] = useState<Map<string, string[]>>(new Map());
@@ -317,15 +340,15 @@ function MarketplaceDemo() {
 
   const validMs = msTitles.filter((m) => m.trim().length > 0);
   const totalBudget = parseFloat(budget) || 0;
-  const canPost = title.trim() && desc.trim() && validMs.length > 0 && totalBudget > 0 && connected;
+  const canPost = title.trim() && desc.trim() && validMs.length > 0 && totalBudget > 0 && account;
 
   const handlePost = async () => {
-    if (!canPost || !account || !wallet?.provider) return;
+    if (!canPost) return;
     setPosting(true);
     try {
       const amountWei = BigInt(Math.round(totalBudget * 10 ** 18));
       const perMs = amountWei / BigInt(validMs.length);
-      const txHash = await postJob(account, wallet.provider, {
+      const txHash = await postJob({
         title: title.trim(),
         description: desc.trim(),
         milestoneTitles: validMs,
@@ -349,10 +372,10 @@ function MarketplaceDemo() {
   };
 
   const handleApply = async (jobId: bigint) => {
-    if (!account || !wallet?.provider) return;
+    if (!account) return;
     setApplyLoading(jobId);
     try {
-      const txHash = await applyJob(account, wallet.provider, jobId);
+      const txHash = await applyJob(jobId);
       await waitForReceipt(txHash);
       invalidateAllCache();
       await refresh();
@@ -570,7 +593,7 @@ function MarketplaceDemo() {
                                         <span>{a.slice(0, 8)}…{a.slice(-6)}</span>
                                       </div>
                                       <button
-                                        onClick={() => assignFreelancer(account!, wallet!.provider, id, a).then(() => refresh())}
+                                        onClick={() => assignFreelancer(id, a).then(() => refresh())}
                                         className="rounded-lg border border-gold/20 px-3 py-1 text-gold-soft hover:bg-gold/5 text-[11px] font-medium"
                                       >
                                         Assign
@@ -586,7 +609,7 @@ function MarketplaceDemo() {
                             </div>
                             <AssignFreelancerInput
                               onAssign={async (addr) => {
-                                await assignFreelancer(account!, wallet!.provider, id, addr);
+                                await assignFreelancer(id, addr);
                                 await refresh();
                               }}
                             />
@@ -617,8 +640,8 @@ function MarketplaceDemo() {
 // ─── 2. Dashboard ───────────────────────────────────────────────────────────
 
 function DashboardDemo() {
-  const { account, connected } = useWallet();
-  const wallet = connected;
+  const { connected } = useWallet();
+  const account = getLocalAccountAddress();
   const [role, setRole] = useState<"client" | "freelancer">("freelancer");
   const [jobIds, setJobIds] = useState<bigint[]>([]);
   const [jobs, setJobs] = useState<Map<string, any>>(new Map());
@@ -735,7 +758,7 @@ function DashboardDemo() {
                                     <span>{a.slice(0, 8)}…{a.slice(-6)}</span>
                                   </div>
                                   <button
-                                    onClick={() => assignFreelancer(account!, wallet!.provider, id, a).then(() => refresh())}
+                                    onClick={() => assignFreelancer(id, a).then(() => refresh())}
                                     className="rounded-lg border border-gold/20 px-3 py-1 text-gold-soft hover:bg-gold/5 text-[11px] font-medium"
                                   >
                                     Assign
@@ -786,8 +809,8 @@ const evidenceTypes = [
 ];
 
 function VerifyDemo() {
-  const { account, connected } = useWallet();
-  const wallet = connected;
+  const { connected } = useWallet();
+  const account = getLocalAccountAddress();
 
   const [escrowId, setEscrowId] = useState("");
   const [milestoneIndex, setMilestoneIndex] = useState("0");
@@ -859,7 +882,7 @@ function VerifyDemo() {
   };
 
   const verify = async () => {
-    if (!account || !wallet?.provider || items.length === 0) return;
+    if (items.length === 0) return;
     setState("verifying");
     setCurrentStep(0);
     setErrorMsg("");
@@ -873,7 +896,7 @@ function VerifyDemo() {
     }
 
     try {
-      const txHash = await verifyMilestone(account, wallet.provider, {
+      const txHash = await verifyMilestone({
         escrowId: BigInt(escrowId),
         milestoneIndex: BigInt(milestoneIndex),
         evidenceUrls: items.map((i) => i.url),
@@ -1118,19 +1141,19 @@ function VerifyDemo() {
 // ─── 4. Release ─────────────────────────────────────────────────────────────
 
 function ReleaseDemo() {
-  const { account, connected } = useWallet();
-  const wallet = connected;
+  const { connected } = useWallet();
+  const account = getLocalAccountAddress();
   const [escrowId, setEscrowId] = useState("");
   const [milestoneIndex, setMilestoneIndex] = useState("0");
   const [stage, setStage] = useState<"idle" | "releasing" | "released" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
   const release = async () => {
-    if (!account || !wallet?.provider) return;
+    if (!account) return;
     setStage("releasing");
     setErrorMsg("");
     try {
-      const txHash = await releasePayment(account, wallet.provider, BigInt(escrowId), BigInt(milestoneIndex));
+      const txHash = await releasePayment(BigInt(escrowId), BigInt(milestoneIndex));
       await waitForReceipt(txHash);
       setStage("released");
     } catch (e) {
@@ -1180,8 +1203,8 @@ function ReleaseDemo() {
 // ─── 5. Dispute ──────────────────────────────────────────────────────────────
 
 function DisputeDemo() {
-  const { account, connected } = useWallet();
-  const wallet = connected;
+  const { connected } = useWallet();
+  const account = getLocalAccountAddress();
 
   const [step, setStep] = useState<"open" | "votes" | "resolve" | "execute" | "done">("open");
 
@@ -1205,10 +1228,10 @@ function DisputeDemo() {
   const canOpen = escrowId.trim().length > 0 && client.trim().length > 0 && freelancer.trim().length > 0 && connected;
 
   const handleOpen = async () => {
-    if (!canOpen || !account || !wallet?.provider) return;
+    if (!canOpen || !account) return;
     setError(""); setLoading(true);
     try {
-      const hash = await openDispute(account, wallet.provider, BigInt(escrowId), BigInt(milestoneIdx || "0"), client, [], freelancer, []);
+      const hash = await openDispute(BigInt(escrowId), BigInt(milestoneIdx || "0"), client, [], freelancer, []);
       setTxHash(hash);
       await waitForReceipt(hash);
       const events = await getEscrowEvents(BigInt(escrowId));
@@ -1222,11 +1245,11 @@ function DisputeDemo() {
   };
 
   const handleCastVote = async () => {
-    if (!disputeId || !account || !wallet?.provider) return;
+    if (!disputeId || !account) return;
     if (!currentVote.vote || !currentVote.reasoning.trim()) return;
     setError(""); setLoading(true);
     try {
-      const hash = await castJurorVote(account, wallet.provider, disputeId, currentVote.vote, currentVote.reasoning);
+      const hash = await castJurorVote(disputeId, currentVote.vote, currentVote.reasoning);
       await waitForReceipt(hash);
       setJuryVotes((v) => [...v, { vote: currentVote.vote, reasoning: currentVote.reasoning }]);
       setCurrentVote({ vote: "client", reasoning: "" });
@@ -1237,10 +1260,10 @@ function DisputeDemo() {
   };
 
   const handleResolve = async () => {
-    if (!disputeId || !account || !wallet?.provider) return;
+    if (!disputeId || !account) return;
     setError(""); setLoading(true);
     try {
-      const hash = await resolveDispute(account, wallet.provider, disputeId);
+      const hash = await resolveDispute(disputeId);
       await waitForReceipt(hash);
       const d = await getDispute(disputeId);
       setResolution(d);
@@ -1251,10 +1274,10 @@ function DisputeDemo() {
   };
 
   const handleExecute = async () => {
-    if (!disputeId || !account || !wallet?.provider) return;
+    if (!disputeId || !account) return;
     setError(""); setLoading(true);
     try {
-      const hash = await executeDisputeVerdict(account, wallet.provider, disputeId);
+      const hash = await executeDisputeVerdict(disputeId);
       await waitForReceipt(hash);
       const escrow = await getEscrow(BigInt(escrowId));
       setExecution(escrow);
@@ -1437,7 +1460,8 @@ function DisputeDemo() {
 }
 
 function HistoryDemo() {
-  const { account, connected } = useWallet();
+  const { connected } = useWallet();
+  const account = getLocalAccountAddress();
   const [role, setRole] = useState<"client" | "freelancer">("freelancer");
   const [completed, setCompleted] = useState<any[]>([]);
   const [expandedId, setExpandedId] = useState<bigint | null>(null);

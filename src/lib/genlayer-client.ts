@@ -1,31 +1,42 @@
-import { createClient } from "genlayer-js";
+import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 import { CONTRACTS, FAUCET_URL } from "./genlayer-network";
 
 const PRAETOR_ADDRESS = CONTRACTS.praetor;
 
-let writeClientCache: {
-  address: string;
-  providerId: string;
-  client: ReturnType<typeof createClient>;
-} | null = null;
+// ─── Local GenLayer account (for writes — MetaMask can't send txs on GenLayer) ──
+const LOCAL_KEY_STORAGE = "praetor:local-key";
 
-export function getWriteClient(walletAddress: string, provider: any) {
-  if (
-    writeClientCache?.address === walletAddress &&
-    writeClientCache?.providerId === provider?.rdns
-  )
-    return writeClientCache.client;
+let localAccountCache: ReturnType<typeof createAccount> | null = null;
 
-  const client = createClient({
+function getLocalAccount(): ReturnType<typeof createAccount> {
+  if (localAccountCache) return localAccountCache;
+  const stored = localStorage.getItem(LOCAL_KEY_STORAGE);
+  const privKey: `0x${string}` = stored
+    ? (stored as `0x${string}`)
+    : (() => {
+        const k = generatePrivateKey();
+        try { localStorage.setItem(LOCAL_KEY_STORAGE, k); } catch { /* noop */ }
+        return k;
+      })();
+  localAccountCache = createAccount(privKey);
+  return localAccountCache;
+}
+
+export function getLocalAccountAddress(): string {
+  return getLocalAccount().address;
+}
+
+let writeClient: ReturnType<typeof createClient> | null = null;
+
+export function getWriteClient() {
+  if (writeClient) return writeClient;
+  writeClient = createClient({
     chain: studionet,
-    account: walletAddress as `0x${string}`,
-    provider,
+    account: getLocalAccount(),
   });
-
-  writeClientCache = { address: walletAddress, providerId: provider?.rdns, client };
-  return client;
+  return writeClient;
 }
 
 export const readClient = createClient({
@@ -100,7 +111,8 @@ export function invalidateAllCache(): void {
 export function invalidateMarketplaceCache(): void { localStorage.removeItem(CACHE_PREFIX + "marketplace"); }
 
 export function resetWriteClient() {
-  writeClientCache = null;
+  writeClient = null;
+  localAccountCache = null;
 }
 
 // ─── Network ────────────────────────────────────────────────────────────────
@@ -141,22 +153,17 @@ export async function switchToStudio(provider: {
 
 // ─── Marketplace Write ──────────────────────────────────────────────────────
 
-export async function postJob(
-  walletAddress: string,
-  provider: any,
-  params: {
-    title: string;
-    description: string;
-    milestoneTitles: string[];
-    milestoneDescriptions: string[];
-    milestoneAmounts: bigint[];
-    evidenceTypes: string[];
-    requirements: string;
-    value: bigint;
-  },
-): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+export async function postJob(params: {
+  title: string;
+  description: string;
+  milestoneTitles: string[];
+  milestoneDescriptions: string[];
+  milestoneAmounts: bigint[];
+  evidenceTypes: string[];
+  requirements: string;
+  value: bigint;
+}): Promise<string> {
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "post_job",
     args: [
@@ -173,13 +180,8 @@ export async function postJob(
   return txHash as string;
 }
 
-export async function applyJob(
-  walletAddress: string,
-  provider: any,
-  jobId: bigint,
-): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+export async function applyJob(jobId: bigint): Promise<string> {
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "apply_job",
     args: [jobId],
@@ -189,13 +191,10 @@ export async function applyJob(
 }
 
 export async function assignFreelancer(
-  walletAddress: string,
-  provider: any,
   jobId: bigint,
   freelancerAddress: string,
 ): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "assign_freelancer",
     args: [jobId, freelancerAddress],
@@ -207,14 +206,11 @@ export async function assignFreelancer(
 // ─── Escrow Write ───────────────────────────────────────────────────────────
 
 export async function submitEvidence(
-  walletAddress: string,
-  provider: any,
   escrowId: bigint,
   milestoneIndex: bigint,
   evidenceUrl: string,
 ): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "submit_evidence",
     args: [escrowId, milestoneIndex, evidenceUrl],
@@ -224,13 +220,10 @@ export async function submitEvidence(
 }
 
 export async function releasePayment(
-  walletAddress: string,
-  provider: any,
   escrowId: bigint,
   milestoneIndex: bigint,
 ): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "release_payment",
     args: [escrowId, milestoneIndex],
@@ -239,21 +232,16 @@ export async function releasePayment(
   return txHash as string;
 }
 
-export async function verifyMilestone(
-  walletAddress: string,
-  provider: any,
-  params: {
-    escrowId: bigint;
-    milestoneIndex: bigint;
-    evidenceUrls: string[];
-    evidenceTypes: string[];
-    jobDescription: string;
-    milestoneTitle: string;
-    milestoneDescription: string;
-  },
-): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+export async function verifyMilestone(params: {
+  escrowId: bigint;
+  milestoneIndex: bigint;
+  evidenceUrls: string[];
+  evidenceTypes: string[];
+  jobDescription: string;
+  milestoneTitle: string;
+  milestoneDescription: string;
+}): Promise<string> {
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "verify_milestone",
     args: [
@@ -273,8 +261,6 @@ export async function verifyMilestone(
 // ─── Dispute Write ──────────────────────────────────────────────────────────
 
 export async function openDispute(
-  walletAddress: string,
-  provider: any,
   escrowId: bigint,
   milestoneIndex: bigint,
   clientStatement: string,
@@ -282,8 +268,7 @@ export async function openDispute(
   freelancerStatement: string,
   freelancerEvidence: string[],
 ): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "open_dispute",
     args: [escrowId, milestoneIndex, clientStatement, clientEvidence, freelancerStatement, freelancerEvidence],
@@ -293,14 +278,11 @@ export async function openDispute(
 }
 
 export async function castJurorVote(
-  walletAddress: string,
-  provider: any,
   disputeId: bigint,
   vote: string,
   reasoning: string,
 ): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "cast_juror_vote",
     args: [disputeId, vote, reasoning],
@@ -309,13 +291,8 @@ export async function castJurorVote(
   return txHash as string;
 }
 
-export async function resolveDispute(
-  walletAddress: string,
-  provider: any,
-  disputeId: bigint,
-): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+export async function resolveDispute(disputeId: bigint): Promise<string> {
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "resolve_dispute",
     args: [disputeId],
@@ -324,13 +301,8 @@ export async function resolveDispute(
   return txHash as string;
 }
 
-export async function executeDisputeVerdict(
-  walletAddress: string,
-  provider: any,
-  disputeId: bigint,
-): Promise<string> {
-  const client = getWriteClient(walletAddress, provider);
-  const txHash = await client.writeContract({
+export async function executeDisputeVerdict(disputeId: bigint): Promise<string> {
+  const txHash = await getWriteClient().writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "execute_dispute_verdict",
     args: [disputeId],

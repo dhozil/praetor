@@ -14,7 +14,7 @@ No more he-said-she-said. No more escrow agents taking weeks. The code judges.
 ### 🏗️ Freelance Development
 A client posts a job ("Build a DeFi dashboard") with milestones and locked funds. A freelancer applies, gets assigned, and submits evidence for each milestone (GitHub PR, deployment URL, test results). GenLayer validators independently review the evidence via LLM consensus. If the work passes, funds are released automatically.
 
-### 🔐 Smart Contract Audits
+### 🔐 Intelligent Contract Audits
 An auditor completes a security review and submits the report as evidence. The AI verifies the report covers the agreed scope before payment is released. If the client disputes the audit quality, both parties submit statements and an AI jury decides the verdict.
 
 ### 🎨 Creative & Design Work
@@ -67,7 +67,7 @@ When a milestone is rejected, either party can open a dispute. Both submit state
 
 ---
 
-## Smart Contract
+## Intelligent Contract
 
 Written in Python using `py-genlayer`. Deployed on Studionet at **`0x616829166C487d12254898f1BD615Fd5FBcDCb2d`**.
 
@@ -157,7 +157,7 @@ bun run build        # Production build → .output/
 | Styling | Tailwind CSS v4 |
 | UI | shadcn/ui (Radix primitives) |
 | Icons | Lucide React |
-| Smart Contract | Python (`py-genlayer`) |
+| Intelligent Contract | Python (`py-genlayer`) |
 | GenLayer SDK | `genlayer-js` v1.2.0 |
 | Wallet Discovery | EIP-6963 |
 | RPC | `https://rpc-bradbury.genlayer.com` |
