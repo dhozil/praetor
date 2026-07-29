@@ -6,11 +6,24 @@ import { CONTRACTS, FAUCET_URL } from "./genlayer-network";
 const PRAETOR_ADDRESS = CONTRACTS.praetor;
 const STUDIO_RPC = "https://studio.genlayer.com/api";
 
-// ─── GenLayer HTTP provider (bypasses MetaMask for eth_sendTransaction) ──
-// MetaMask sends standard EVM JSON-RPC which GenLayer's Studio API doesn't
-// understand. This provider sends requests directly as HTTP JSON-RPC.
+// ─── GenLayer HTTP provider ──
+// Routes eth_sendTransaction through the injected wallet (Rabby/MetaMask) for
+// signing; sends all other methods (reads) directly to the Studio API via HTTP.
+const PROVIDER_METHODS = new Set([
+  "eth_accounts",
+  "eth_requestAccounts",
+  "eth_sendTransaction",
+  "eth_signTransaction",
+  "personal_sign",
+  "eth_signTypedData_v4",
+]);
 const genlayerProvider = {
   request: async ({ method, params }: { method: string; params?: unknown[] }) => {
+    if (PROVIDER_METHODS.has(method)) {
+      const wallet = typeof window !== "undefined" ? (window as any).ethereum : undefined;
+      if (!wallet) throw new Error("No wallet (Rabby/MetaMask) detected — install a browser wallet to send transactions.");
+      return wallet.request({ method, params });
+    }
     const res = await fetch(STUDIO_RPC, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
