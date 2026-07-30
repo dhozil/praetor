@@ -1377,18 +1377,20 @@ function DisputeDemo() {
         const [cIds, fIds] = await Promise.all([getClientJobs(account).catch(() => []), getFreelancerJobs(account).catch(() => [])]);
         const allIds = [...new Set([...cIds, ...fIds])];
         const results: any[] = [];
-        for (const id of allIds) {
+        const entries = await Promise.all(allIds.map(async (id) => {
           try {
             const job = await getJob(id);
             if (job.status === "assigned") {
               const eid = await getEscrowByJob(id);
               if (eid !== null) {
                 const escrow = await getEscrow(eid);
-                if (escrow) results.push({ ...escrow, escrowId: eid, jobTitle: job.title, jobId: id });
+                if (escrow) return { ...escrow, escrowId: eid, jobTitle: job.title, jobId: id };
               }
             }
           } catch { /* */ }
-        }
+          return null;
+        }));
+        for (const e of entries) { if (e) results.push(e); }
         setMyDisputeEscrows(results);
       } catch { /* */ }
       setLoadingEscrows(false);
