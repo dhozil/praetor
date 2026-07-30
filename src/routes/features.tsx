@@ -1674,11 +1674,11 @@ function ReputationDemo() {
       {address && <div className="text-[10px] font-mono text-muted-foreground">{address.slice(0, 8)}…{address.slice(-6)}</div>}
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="rounded-lg bg-gold/5 p-2">
-          <div className="text-muted-foreground">Total jobs</div>
+          <div className="text-muted-foreground">{p.role === "client" ? "Jobs posted" : "Jobs worked"}</div>
           <div className="text-marble font-medium">{Number(p.total_jobs || 0n)}</div>
         </div>
         <div className="rounded-lg bg-green-500/5 p-2">
-          <div className="text-muted-foreground">Completed</div>
+          <div className="text-muted-foreground">{p.role === "client" ? "Paid" : "Completed"}</div>
           <div className="text-green-400 font-medium">{Number(p.completed_jobs || 0n)}</div>
         </div>
         <div className="rounded-lg bg-red-500/5 p-2">
