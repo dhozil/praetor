@@ -996,7 +996,7 @@ function VerifyDemo() {
           <div className="rounded-xl border border-gold/20 p-4 space-y-3">
             <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">1. Select escrow</div>
 
-            {myEscrows.length > 0 ? (
+            {myEscrows.filter((e) => (e.milestones || []).some((m: any) => m.status !== "verified" && m.status !== "paid")).length > 0 ? (
               <select
                 value={escrowId}
                 onChange={(e) => {
@@ -1007,8 +1007,9 @@ function VerifyDemo() {
                     if (entry) {
                       setJobDescription(entry.jobDescription || "");
                       setMilestoneIndex("0");
-                      if (entry.milestones?.length > 0) {
-                        const ms = entry.milestones[0];
+                      const avail = entry.milestones?.filter((m: any) => m.status !== "verified" && m.status !== "paid") || [];
+                      if (avail.length > 0) {
+                        const ms = avail[0];
                         setMilestoneTitle(ms.title || "");
                         setMilestoneDescription(ms.description || "");
                       }
@@ -1018,11 +1019,16 @@ function VerifyDemo() {
                 className="input w-full text-sm"
               >
                 <option value="">— Select escrow —</option>
-                {myEscrows.map((e) => (
-                  <option key={e.jobId.toString()} value={e.jobId.toString()}>
-                    #{e.jobId.toString()} — {e.title} ({e.milestones?.length || 0} ms)
-                  </option>
-                ))}
+                {myEscrows
+                  .filter((e) => (e.milestones || []).some((m: any) => m.status !== "verified" && m.status !== "paid"))
+                  .map((e) => {
+                    const remain = (e.milestones || []).filter((m: any) => m.status !== "verified" && m.status !== "paid").length;
+                    return (
+                      <option key={e.jobId.toString()} value={e.jobId.toString()}>
+                        #{e.jobId.toString()} — {e.title} ({remain} pending)
+                      </option>
+                    );
+                  })}
               </select>
             ) : (
               <div className="flex gap-2">
@@ -1512,63 +1518,46 @@ function DisputeDemo() {
 
           {step === "open" && (
             <div className="space-y-4">
-              {/* Auto-loaded escrows */}
-              {loadingEscrows ? (
-                <div className="text-xs text-muted-foreground text-center">Loading your escrows…</div>
-              ) : myDisputeEscrows.length > 0 ? (
-                <div className="space-y-3">
-                  <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Your escrows</div>
-                  <div className="rounded-xl border border-gold/20 divide-y divide-gold/10 text-sm max-h-60 overflow-y-auto">
-                    {myDisputeEscrows.map((escrow) => (
-                      <div key={escrow.escrowId?.toString()}>
-                        <div className="px-3 py-2 text-xs font-mono text-gold-soft">#{escrow.escrowId?.toString()} — {escrow.jobTitle || escrow.job_title}</div>
-                        {escrow.milestones?.map((ms: any, i: number) => {
-                          const canDispute = ms.status === "verified" || ms.status === "rejected";
-                          return (
-                            <button
-                              key={i}
-                              onClick={() => canDispute && selectDisputeEscrow(escrow, i)}
-                              disabled={!canDispute}
-                              className={`w-full flex items-center justify-between px-4 py-2 text-left hover:bg-gold/5 transition-all ${
-                                escrowId === escrow.escrowId?.toString() && milestoneIdx === i.toString() ? "bg-gold/10" : ""
-                              } disabled:opacity-40`}
-                            >
-                              <span className="text-sm text-marble">{ms.title}</span>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground">{Number(ms.amount) / 1e18} GEN</span>
-                                <Badge status={ms.status} />
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+              {/* Escrow & milestone picker */}
+              <div className="rounded-xl border border-gold/20 p-4 space-y-3">
+                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">1. Select escrow</div>
+                <select
+                  value={escrowId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val) {
+                      const [eid, midx] = val.split(":");
+                      const escrow = myDisputeEscrows.find((x) => x.escrowId?.toString() === eid);
+                      if (escrow) {
+                        selectDisputeEscrow(escrow, parseInt(midx));
+                      }
+                    } else {
+                      setEscrowId("");
+                    }
+                  }}
+                  className="input w-full text-sm"
+                >
+                  <option value="">— Select escrow —</option>
+                  {myDisputeEscrows.map((escrow) =>
+                    (escrow.milestones || []).map((ms: any, i: number) => {
+                      if (ms.status !== "verified" && ms.status !== "rejected") return null;
+                      return (
+                        <option key={escrow.escrowId?.toString() + ":" + i} value={escrow.escrowId?.toString() + ":" + i}>
+                          #{escrow.escrowId?.toString()} — {escrow.jobTitle || escrow.job_title} — M{i + 1}: {ms.title}
+                        </option>
+                      );
+                    })
+                  )}
+                </select>
+              </div>
 
-              {/* Manual entry */}
-              <details className="text-xs">
-                <summary className="cursor-pointer text-gold-soft hover:text-foreground">Or enter manually</summary>
-                <div className="mt-3 space-y-3">
-                  <div className="flex gap-2">
-                    <Field label="Escrow ID">
-                      <input type="number" step="1" value={escrowId} onChange={(e) => setEscrowId(e.target.value)} className="input" placeholder="Escrow ID" />
-                    </Field>
-                    <Field label="Milestone">
-                      <input type="number" step="1" value={milestoneIdx} onChange={(e) => setMilestoneIdx(e.target.value)} className="input w-20" placeholder="0" />
-                    </Field>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Client's address">
-                      <input value={clientAddr} onChange={(e) => setClientAddr(e.target.value)} className="input font-mono text-xs" placeholder="0x…" />
-                    </Field>
-                    <Field label="Freelancer's address">
-                      <input value={freelancerAddr} onChange={(e) => setFreelancerAddr(e.target.value)} className="input font-mono text-xs" placeholder="0x…" />
-                    </Field>
-                  </div>
+              {/* Selected escrow info */}
+              {escrowId && clientAddr && (
+                <div className="rounded-xl border border-gold/15 bg-black/10 p-3 text-xs text-muted-foreground">
+                  Client: <span className="font-mono text-marble">{clientAddr.slice(0, 6)}…{clientAddr.slice(-4)}</span>
+                  {" | "}Freelancer: <span className="font-mono text-marble">{freelancerAddr.slice(0, 6)}…{freelancerAddr.slice(-4)}</span>
                 </div>
-              </details>
+              )}
 
               {/* Statements */}
               <div className="grid gap-4 md:grid-cols-2">
