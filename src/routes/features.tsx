@@ -44,6 +44,7 @@ import {
   getClientJobs,
   getFreelancerJobs,
   getEscrow,
+  getEscrowByJob,
   verifyMilestone,
   getVerification,
   getDispute,
@@ -833,7 +834,8 @@ function VerifyDemo() {
           try {
             const job = await getJob(id);
             if (job.status === "assigned") {
-              const escrow = await getEscrow(id);
+              const escrowId = await getEscrowByJob(id);
+              const escrow = escrowId !== null ? await getEscrow(escrowId) : null;
               list.push({
                 jobId: id,
                 title: job.title,

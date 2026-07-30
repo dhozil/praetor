@@ -435,6 +435,19 @@ export async function getEscrow(escrowId: bigint): Promise<any> {
   return result;
 }
 
+export async function getEscrowByJob(jobId: bigint): Promise<bigint | null> {
+  const result = await cachedRead("escrowByJob:" + jobId.toString(), () =>
+    readClient.readContract({
+      address: PRAETOR_ADDRESS,
+      functionName: "get_escrow_by_job",
+      args: [jobId],
+    }),
+  );
+  const val = result as bigint;
+  if (val === 2n ** 256n - 1n) return null;
+  return val;
+}
+
 export async function getEscrowEvents(escrowId: bigint): Promise<any[]> {
   const result = await cachedRead("escrowEvents:" + escrowId.toString(), () =>
     readClient.readContract({

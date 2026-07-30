@@ -233,7 +233,7 @@ class PraetorV2(gl.Contract):
         freelancer = Address(freelancer_address)
 
         # Create escrow from job
-        escrow_id = self._create_escrow_from_job(job, freelancer)
+        escrow_id = self._create_escrow_from_job(job, freelancer, job_id)
 
         job.status = "assigned"
         job.assigned_freelancer = freelancer
@@ -256,7 +256,7 @@ class PraetorV2(gl.Contract):
         self._log_event("freelancer_assigned", escrow_id,
                         f"Freelancer assigned to job #{job_id}, escrow #{escrow_id}")
 
-    def _create_escrow_from_job(self, job: JobPosting, freelancer: Address) -> u256:
+    def _create_escrow_from_job(self, job: JobPosting, freelancer: Address, job_id: u256) -> u256:
         escrow_id = self.escrow_counter
         self.escrow_counter = self.escrow_counter + u256(1)
 
@@ -274,7 +274,7 @@ class PraetorV2(gl.Contract):
             ))
 
         self.escrows[escrow_id] = Escrow(
-            job_id=u256(0),
+            job_id=job_id,
             job_title=job.title,
             job_description=job.description,
             client=job.client,
@@ -323,6 +323,16 @@ class PraetorV2(gl.Contract):
                 if jid in self.job_to_escrow and self.job_to_escrow[jid] == escrow_id:
                     return jid
         return u256(2**256 - 1)
+
+    @gl.public.view
+    def get_escrow_by_job(self, job_id: u256) -> u256:
+        if job_id not in self.job_to_escrow:
+            return u256(2**256 - 1)
+        return self.job_to_escrow[job_id]
+
+    @gl.public.view
+    def get_escrow_counter(self) -> u256:
+        return self.escrow_counter
 
     # ── Escrow View Methods ──────────────────────────────────────────────────
 
