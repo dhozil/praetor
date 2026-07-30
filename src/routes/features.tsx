@@ -320,6 +320,7 @@ function MarketplaceDemo() {
   };
 
   useEffect(() => { refresh(); }, []);
+  useEffect(() => { const t = setInterval(refresh, 15000); return () => clearInterval(t); }, []);
 
   const validMs = msTitles.filter((m) => m.trim().length > 0);
   const totalBudget = parseFloat(budget) || 0;
@@ -662,6 +663,7 @@ function DashboardDemo() {
   };
 
   useEffect(() => { refresh(); }, [account, role]);
+  useEffect(() => { if (!account) return; const t = setInterval(refresh, 15000); return () => clearInterval(t); }, [account, role]);
 
   if (!connected) return <EmptyState text="Connect wallet to see your dashboard." />;
 
