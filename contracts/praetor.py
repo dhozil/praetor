@@ -145,6 +145,9 @@ class PraetorV2(gl.Contract):
     audit_events: TreeMap[u256, AuditEvent]
     escrow_event_index: TreeMap[u256, DynArray[u256]]
 
+    # Fee
+    platform_fee_percent: u8
+
     def __init__(self, platform_fee_percent: u8):
         self.job_counter = u256(0)
         self.escrow_counter = u256(0)
@@ -715,10 +718,11 @@ Respond ONLY as JSON:
         p.total_jobs = p.total_jobs + u256(1)
         if completed:
             p.completed_jobs = p.completed_jobs + u256(1)
+        amt = u256(amount)
         if role == "freelancer":
-            p.total_earned = p.total_earned + amount
+            p.total_earned = p.total_earned + amt
         else:
-            p.total_spent = p.total_spent + amount
+            p.total_spent = p.total_spent + amt
         p.praetor_score = self._calc_score(p)
         self.profiles[user] = p
 
