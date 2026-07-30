@@ -1122,8 +1122,8 @@ function VerifyDemo() {
 
           {!connected && <div className="rounded-lg border border-gold/20 bg-gold/5 p-2 text-xs text-gold-soft text-center">Connect wallet to verify</div>}
 
-          <button onClick={verify} disabled={!canVerify || state === "verifying"}
-            className="btn-gold w-full rounded-full py-3.5 font-medium hover:[&]:btn-gold-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          <button onClick={verify} disabled={!canVerify || state === "verifying" || state === "passed"}
+            className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {state === "verifying" ? "AI deliberating…" : state === "passed" ? "✓ Milestone approved" : state === "failed" ? "Retry" : "Verify with GenLayer AI"}
           </button>
