@@ -569,7 +569,7 @@ function MarketplaceDemo() {
                                         <span>{a.slice(0, 8)}…{a.slice(-6)}</span>
                                       </div>
                                       <button
-                                        onClick={() => assignFreelancer(account!, id, a).then(() => refresh())}
+                                        onClick={async () => { const h = await assignFreelancer(account!, id, a); await waitForReceipt(h); invalidateAllCache(); await refresh(); }}
                                         className="rounded-lg border border-gold/20 px-3 py-1 text-gold-soft hover:bg-gold/5 text-[11px] font-medium"
                                       >
                                         Assign
@@ -585,7 +585,9 @@ function MarketplaceDemo() {
                             </div>
                             <AssignFreelancerInput
                               onAssign={async (addr) => {
-                                await assignFreelancer(account!, id, addr);
+                                const h = await assignFreelancer(account!, id, addr);
+                                await waitForReceipt(h);
+                                invalidateAllCache();
                                 await refresh();
                               }}
                             />
@@ -752,7 +754,7 @@ function DashboardDemo() {
                                     <span>{a.slice(0, 8)}…{a.slice(-6)}</span>
                                   </div>
                                   <button
-                                    onClick={() => assignFreelancer(account!, id, a).then(() => refresh())}
+                                    onClick={async () => { const h = await assignFreelancer(account!, id, a); await waitForReceipt(h); invalidateAllCache(); await refresh(); }}
                                     className="rounded-lg border border-gold/20 px-3 py-1 text-gold-soft hover:bg-gold/5 text-[11px] font-medium"
                                   >
                                     Assign
