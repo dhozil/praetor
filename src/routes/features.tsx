@@ -1216,7 +1216,6 @@ function ReleaseDemo() {
                 <div className="text-[10px] text-muted-foreground mb-1">Milestone</div>
                 <input value={milestoneIndex} onChange={(e) => setMilestoneIndex(e.target.value)} className="input w-full" placeholder="0" />
               </div>
-              <button onClick={() => { setEscrowId("0"); setMilestoneIndex("0"); }} type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-gold/20 px-3 py-[11px] text-xs text-gold-soft hover:bg-gold/5 transition-colors"><Sparkles className="h-3 w-3" /> Fill</button>
             </div>
             <p className="text-[10px] text-muted-foreground">Only the client can release. The milestone must be verified first.</p>
           </div>
