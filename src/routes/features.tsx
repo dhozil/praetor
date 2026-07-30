@@ -1160,6 +1160,16 @@ function ReleaseDemo() {
     try {
       const txHash = await releasePayment(account, BigInt(escrowId), BigInt(milestoneIndex));
       await waitForReceipt(txHash);
+      // Record reputation for both parties (silent if not registered)
+      try {
+        const escrow = await getEscrow(BigInt(escrowId));
+        if (escrow) {
+          const amount = escrow.milestones?.[parseInt(milestoneIndex)]?.amount || 0n;
+          await recordJob(account!, escrow.client, "client", amount, true).catch(() => {});
+          await recordJob(account!, escrow.freelancer, "freelancer", amount, true).catch(() => {});
+          invalidateAllCache();
+        }
+      } catch { /* skip if profile not found */ }
       setStage("released");
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Release failed");
@@ -1287,6 +1297,13 @@ function DisputeDemo() {
       setExecution(escrow);
       setStep("done");
       invalidateAllCache();
+      // Record dispute result for winner (silent if not registered)
+      if (escrow?.winner && escrow.winner !== "0x0000000000000000000000000000000000000000") {
+        const loser = escrow.winner.toLowerCase() === (escrow.client || "").toLowerCase()
+          ? escrow.freelancer : escrow.client;
+        await recordDisputeResult(account!, escrow.winner, true).catch(() => {});
+        if (loser) await recordDisputeResult(account!, loser, false).catch(() => {});
+      }
     } catch (e: any) { setError(e?.shortMessage || e?.message || "Execute failed"); }
     finally { setLoading(false); }
   };
