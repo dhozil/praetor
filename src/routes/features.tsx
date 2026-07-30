@@ -1406,12 +1406,14 @@ function DisputeDemo() {
     setMilestoneIdx(msIdx.toString());
     setClientAddr(escrow.client || "");
     setFreelancerAddr(escrow.freelancer || "");
+    getVerification(escrow.escrowId, BigInt(msIdx)).then(setDisputeVerification).catch(() => setDisputeVerification(null));
   };
 
   const canOpen = escrowId.trim().length > 0 && clientStmt.trim().length > 0 && freelancerStmt.trim().length > 0 && connected;
 
   const [disputeId, setDisputeId] = useState<bigint | null>(null);
   const [txHash, setTxHash] = useState("");
+  const [disputeVerification, setDisputeVerification] = useState<any>(null);
 
   const [juryVotes, setJuryVotes] = useState<{ vote: string; reasoning: string }[]>([]);
   const [currentVote, setCurrentVote] = useState<{ vote: string; reasoning: string }>({ vote: "client", reasoning: "" });
@@ -1491,7 +1493,7 @@ function DisputeDemo() {
 
   const reset = () => {
     setStep("open"); setEscrowId(""); setMilestoneIdx(""); setClientStmt(""); setFreelancerStmt(""); setClientAddr(""); setFreelancerAddr("");
-    setDisputeId(null); setTxHash(""); setJuryVotes([]);
+    setDisputeId(null); setTxHash(""); setJuryVotes([]); setDisputeVerification(null);
     setCurrentVote({ vote: "client", reasoning: "" });
     setResolution(null); setExecution(null); setError("");
   };
@@ -1568,6 +1570,17 @@ function DisputeDemo() {
                 <div className="rounded-xl border border-gold/15 bg-black/10 p-3 text-xs text-muted-foreground">
                   Client: <span className="font-mono text-marble">{clientAddr.slice(0, 6)}…{clientAddr.slice(-4)}</span>
                   {" | "}Freelancer: <span className="font-mono text-marble">{freelancerAddr.slice(0, 6)}…{freelancerAddr.slice(-4)}</span>
+                </div>
+              )}
+
+              {/* AI verification result */}
+              {disputeVerification && (
+                <div className={`rounded-xl border p-3 space-y-1.5 ${disputeVerification.passed ? "border-green-500/30 bg-green-500/5" : "border-red-500/30 bg-red-500/5"}`}>
+                  <div className="text-xs uppercase tracking-wider text-gold-soft">AI Verification Result</div>
+                  <div className={`text-sm font-medium ${disputeVerification.passed ? "text-green-400" : "text-red-400"}`}>
+                    {disputeVerification.passed ? "✓ Passed" : "✗ Rejected"} — Score: {disputeVerification.score}/100
+                  </div>
+                  <div className="text-xs text-muted-foreground leading-relaxed">{disputeVerification.reasoning}</div>
                 </div>
               )}
 
