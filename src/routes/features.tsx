@@ -1170,122 +1170,148 @@ function VerifyDemo() {
 
 function ReleaseDemo() {
   const { account, connected } = useWallet();
-  const [escrowId, setEscrowId] = useState("");
-  const [escrowData, setEscrowData] = useState<any>(null);
-  const [milestoneIndex, setMilestoneIndex] = useState("0");
+  const [escrows, setEscrows] = useState<any[]>([]);
+  const [selectedEscrow, setSelectedEscrow] = useState<any>(null);
+  const [milestoneIndex, setMilestoneIndex] = useState<number>(0);
   const [stage, setStage] = useState<"idle" | "releasing" | "released" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const loadEscrow = async () => {
-    if (!escrowId.trim()) return;
+  const loadMyEscrows = async () => {
+    if (!account) return;
     setLoading(true);
-    setErrorMsg("");
     try {
-      const data = await getEscrow(BigInt(escrowId));
-      if (data) {
-        setEscrowData(data);
-        setMilestoneIndex("0");
-      } else {
-        setEscrowData(null);
-        setErrorMsg("Escrow not found");
+      const ids = await getClientJobs(account);
+      const results: any[] = [];
+      for (const id of ids) {
+        try {
+          const job = await getJob(id);
+          if (job.status === "assigned") {
+            const eid = await getEscrowByJob(id);
+            if (eid !== null) {
+              const escrow = await getEscrow(eid);
+              if (escrow) results.push({ ...escrow, escrowId: eid, jobTitle: job.title });
+            }
+          }
+        } catch { /* */ }
       }
-    } catch {
-      setEscrowData(null);
-      setErrorMsg("Escrow not found");
-    }
+      setEscrows(results);
+    } catch { /* */ }
     setLoading(false);
   };
 
+  useEffect(() => { loadMyEscrows(); }, [account]);
+
   const release = async () => {
-    if (!account || !escrowData) return;
+    if (!account || !selectedEscrow) return;
     setStage("releasing");
     setErrorMsg("");
     try {
-      const txHash = await releasePayment(account, BigInt(escrowId), BigInt(milestoneIndex));
+      const txHash = await releasePayment(account, selectedEscrow.escrowId, BigInt(milestoneIndex));
       await waitForReceipt(txHash);
       try {
-        const amount = escrowData.milestones?.[parseInt(milestoneIndex)]?.amount || 0n;
-        await recordJob(account!, escrowData.client, "client", amount, true).catch(() => {});
-        await recordJob(account!, escrowData.freelancer, "freelancer", amount, true).catch(() => {});
+        const ms = selectedEscrow.milestones?.[milestoneIndex];
+        const amount = ms?.amount || 0n;
+        await recordJob(account!, selectedEscrow.client, "client", amount, true).catch(() => {});
+        await recordJob(account!, selectedEscrow.freelancer, "freelancer", amount, true).catch(() => {});
         invalidateAllCache();
       } catch { /* */ }
       setStage("released");
-      loadEscrow();
+      loadMyEscrows();
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Release failed");
       setStage("error");
     }
   };
 
-  const selectedMs = escrowData?.milestones?.[parseInt(milestoneIndex)];
+  const selectedMs = selectedEscrow?.milestones?.[milestoneIndex];
 
   return (
     <DemoShell
       title="Release milestone payment"
-      subtitle="Enter escrow ID to load milestone details, then release verified milestones."
+      subtitle="Your escrows with verified milestones. Only the client can release."
       left={
         <div className="space-y-4">
-          {/* Escrow ID input */}
-          <div className="rounded-xl border border-gold/20 p-4 space-y-3">
-            <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Escrow</div>
-            <div className="flex gap-2">
-              <input value={escrowId} onChange={(e) => { setEscrowId(e.target.value); setEscrowData(null); }} className="input flex-1" placeholder="Escrow ID" />
-              <button onClick={loadEscrow} disabled={!escrowId.trim() || loading} className="btn-ghost-gold rounded-lg px-4 text-sm">Load</button>
-            </div>
-          </div>
+          {!connected && <div className="rounded-lg border border-gold/20 bg-gold/5 p-3 text-xs text-gold-soft text-center">Connect wallet to release</div>}
 
-          {/* Escrow details */}
-          {escrowData && (
-            <div className="rounded-xl border border-gold/20 p-4 space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-marble font-medium">{escrowData.job_title}</span>
-                <Badge status={escrowData.status} />
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Job ID: <span className="font-mono text-marble">#{escrowData.job_id?.toString()}</span>
-                {escrowData.freelancer && escrowData.freelancer !== "0x0000000000000000000000000000000000000000" && (
-                  <> — Freelancer: <span className="font-mono text-marble">{escrowData.freelancer.slice(0, 6)}…{escrowData.freelancer.slice(-4)}</span></>
-                )}
-              </div>
-
-              {/* Milestone list */}
-              <div className="text-xs uppercase tracking-wider text-gold-soft">Milestones</div>
-              <div className="space-y-1.5">
-                {escrowData.milestones?.map((ms: any, i: number) => {
-                  const canRelease = ms.status === "verified" && ms.status !== "paid";
-                  const selected = parseInt(milestoneIndex) === i;
+          {loading ? (
+            <div className="text-xs text-muted-foreground text-center">Loading your escrows…</div>
+          ) : escrows.length === 0 ? (
+            <EmptyState text="No escrows with assigned freelancers found. Post a job and assign a freelancer first." />
+          ) : (
+            <div className="space-y-3">
+              {/* Escrow selector */}
+              <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Select escrow</div>
+              <div className="rounded-xl border border-gold/20 divide-y divide-gold/10 text-sm">
+                {escrows.map((escrow, i) => {
+                  const verifiedCount = escrow.milestones?.filter((m: any) => m.status === "verified").length || 0;
+                  const paidCount = escrow.milestones?.filter((m: any) => m.status === "paid").length || 0;
                   return (
                     <button
                       key={i}
-                      onClick={() => setMilestoneIndex(i.toString())}
-                      disabled={ms.status === "paid"}
-                      className={`w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-all ${
-                        selected
-                          ? "border-gold/60 bg-gold/10"
-                          : ms.status === "paid"
-                            ? "border-green-500/30 bg-green-500/5 opacity-60"
-                            : "border-gold/15 bg-black/20 hover:bg-gold/5"
+                      onClick={() => { setSelectedEscrow(escrow); setMilestoneIndex(0); setStage("idle"); setErrorMsg(""); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gold/5 transition-all ${
+                        selectedEscrow?.escrowId === escrow.escrowId ? "bg-gold/10 border-l-2 border-gold" : ""
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gold/10 text-[11px] font-mono text-gold-soft">{i + 1}</span>
-                        <div>
-                          <div className="text-sm text-marble">{ms.title}</div>
-                          <div className="text-xs text-muted-foreground">{Number(ms.amount) / 1e18} GEN</div>
-                        </div>
-                      </div>
-                      <Badge status={ms.status} />
+                      <span className="font-mono text-gold-soft shrink-0">#{escrow.escrowId?.toString()}</span>
+                      <span className="flex-1 truncate text-marble font-medium">{escrow.jobTitle || escrow.job_title}</span>
+                      <span className="text-xs text-muted-foreground">{paidCount + verifiedCount}/{escrow.milestones?.length || 0} ready</span>
                     </button>
                   );
                 })}
               </div>
+
+              {/* Selected escrow details */}
+              {selectedEscrow && (
+                <div className="rounded-xl border border-gold/20 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-marble font-medium">{selectedEscrow.jobTitle || selectedEscrow.job_title}</div>
+                    <Badge status={selectedEscrow.status} />
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Freelancer: <span className="font-mono text-marble">{selectedEscrow.freelancer?.slice(0, 6)}…{selectedEscrow.freelancer?.slice(-4)}</span>
+                    — Budget: <span className="text-gold-soft">{Number(selectedEscrow.budget || 0n) / 1e18} GEN</span>
+                  </div>
+
+                  {/* Milestone list */}
+                  <div className="text-xs uppercase tracking-wider text-gold-soft">Milestones</div>
+                  <div className="space-y-1.5">
+                    {selectedEscrow.milestones?.map((ms: any, i: number) => {
+                      const isPaid = ms.status === "paid";
+                      const isVerified = ms.status === "verified";
+                      const isSelected = milestoneIndex === i;
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => { if (!isPaid) { setMilestoneIndex(i); setStage("idle"); setErrorMsg(""); } }}
+                          disabled={isPaid}
+                          className={`w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-all ${
+                            isSelected && !isPaid
+                              ? "border-gold/60 bg-gold/10"
+                              : isPaid
+                                ? "border-green-500/20 bg-green-500/5 opacity-50"
+                                : "border-gold/15 bg-black/20 hover:bg-gold/5"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gold/10 text-[11px] font-mono text-gold-soft">{i + 1}</span>
+                            <div>
+                              <div className="text-sm text-marble">{ms.title}</div>
+                              <div className="text-xs text-muted-foreground">{Number(ms.amount) / 1e18} GEN</div>
+                            </div>
+                          </div>
+                          <Badge status={ms.status} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {!connected && <div className="rounded-lg border border-gold/20 bg-gold/5 p-2 text-xs text-gold-soft text-center">Connect wallet to release</div>}
-
-          {escrowData && selectedMs && (
+          {selectedMs && (
             <button onClick={release} disabled={selectedMs.status !== "verified" || stage === "releasing"}
               className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -1293,8 +1319,12 @@ function ReleaseDemo() {
             </button>
           )}
 
-          {stage === "released" && <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 text-sm text-green-400">Payment released to freelancer.</div>}
+          {stage === "released" && <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 text-sm text-green-400">Payment released — freelancer credited.</div>}
           {errorMsg && <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{errorMsg}</div>}
+
+          <button onClick={loadMyEscrows} className="inline-flex items-center gap-1.5 text-xs text-gold-soft hover:text-foreground">
+            <ExternalLink className="h-3 w-3" /> Refresh escrows
+          </button>
         </div>
       }
       right={
