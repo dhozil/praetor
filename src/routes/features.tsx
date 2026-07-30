@@ -633,6 +633,7 @@ function DashboardDemo() {
   const [escrows, setEscrows] = useState<Map<string, any>>(new Map());
   const [applicants, setApplicants] = useState<Map<string, string[]>>(new Map());
   const [expanded, setExpanded] = useState<bigint | null>(null);
+  const [verifyDetails, setVerifyDetails] = useState<Map<string, any>>(new Map());
 
   const refresh = async () => {
     if (!account) return;
@@ -649,7 +650,13 @@ function DashboardDemo() {
           const job = await getJob(id);
           jm.set(id.toString(), job);
           if (job.status === "assigned") {
-            try { const escrow = await getEscrow(id); if (escrow) em.set(id.toString(), escrow); } catch { /* */ }
+            try {
+              const eid = await getEscrowByJob(id);
+              if (eid !== null) {
+                const escrow = await getEscrow(eid);
+                if (escrow) em.set(id.toString(), { ...escrow, escrowId: eid });
+              }
+            } catch { /* */ }
           }
           if (job.status === "open") {
             try { const apps = await getApplicants(id); if (apps.length > 0) ap.set(id.toString(), apps); } catch { /* */ }
@@ -728,14 +735,27 @@ function DashboardDemo() {
                             {job.milestone_titles.map((title: string, i: number) => {
                               const amount = job.milestone_amounts?.[i] || 0n;
                               const msEscrow = escrow?.milestones?.[i];
+                              const vKey = id.toString() + ":" + i;
+                              const vDetail = verifyDetails.get(vKey);
                               return (
-                                <div key={i} className="flex items-center justify-between py-0.5">
-                                  <span className="text-marble">{title}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-muted-foreground">{Number(amount) / 1e18} GEN</span>
-                                    {msEscrow && <Badge status={msEscrow.status} />}
-                                    {msEscrow?.ai_score > 0 && <span className="text-gold-soft">{msEscrow.ai_score}/100</span>}
+                                <div key={i}>
+                                  <div className="flex items-center justify-between py-0.5">
+                                    <span className="text-marble">{title}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-muted-foreground">{Number(amount) / 1e18} GEN</span>
+                                      {msEscrow && <Badge status={msEscrow.status} />}
+                                      {msEscrow?.ai_score > 0 && <span className="text-gold-soft">{msEscrow.ai_score}/100</span>}
+                                      {(msEscrow?.status === "verified" || msEscrow?.status === "rejected") && !vDetail && (
+                                        <button onClick={async () => { try { const eid = escrow?.escrowId || await getEscrowByJob(id); const r = await getVerification(eid, BigInt(i)); if (r) setVerifyDetails((m) => { const n = new Map(m); n.set(vKey, r); return n; }); } catch {} }} className="text-[10px] text-gold-soft hover:text-foreground underline">details</button>
+                                      )}
+                                    </div>
                                   </div>
+                                  {vDetail && (
+                                    <div className="ml-2 mb-1.5 p-2 rounded bg-black/30 text-[10px] space-y-1">
+                                      <div className={vDetail.passed ? "text-green-400" : "text-red-400"}>{vDetail.passed ? "✓ Passed" : "✗ Rejected"} — Score: {vDetail.score}/100</div>
+                                      <div className="text-muted-foreground">{vDetail.reasoning}</div>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
