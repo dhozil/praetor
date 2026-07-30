@@ -416,30 +416,41 @@ class PraetorV2(gl.Contract):
         if gl.message.sender_address != escrow.freelancer:
             raise gl.vm.UserError("Only freelancer can verify")
 
-        evidence_list = ""
-        for i in range(len(evidence_urls)):
-            evidence_list += f"\n  {i+1}. {evidence_urls[i]} ({evidence_types[i]})"
+        def leader_fn() -> dict:
+            evidence_details = ""
+            for i in range(len(evidence_urls)):
+                url = evidence_urls[i]
+                etype = evidence_types[i]
+                evidence_details += f"\n  {i+1}. [{etype}] {url}"
+                try:
+                    if etype == "GitHub":
+                        resp = gl.nondet.web.get(url)
+                        content = resp.body.decode("utf-8")
+                        evidence_details += f"\n     Fetched content: {content[:1500]}"
+                    else:
+                        content = gl.nondet.web.render(url, mode="text")
+                        evidence_details += f"\n     Rendered content: {content[:1500]}"
+                except Exception as ex:
+                    evidence_details += "\n     (Could not fetch content)"
 
-        prompt = f"""
+            prompt = f"""
 You are an AI milestone verifier for Praetor escrow platform.
 Evaluate whether the evidence demonstrates milestone completion.
 
 JOB: {job_description}
 MILESTONE: {milestone_title} - {milestone_description}
 
-EVIDENCE ({len(evidence_urls)} items):
-{evidence_list}
+FETCHED EVIDENCE CONTENT:
+{evidence_details}
 
 RULES:
-- If 2+ evidence items are relevant and credible, milestone PASSES
-- Score 0-100 based on evidence quality
-- Explain your reasoning
+- If 2+ evidence items show relevant, credible proof of work, milestone PASSES
+- Score 0-100 based on evidence quality and completeness
+- Explain your reasoning, referencing specific content from the evidence
 
 Respond ONLY as JSON:
 {{"passed": bool, "score": int, "reasoning": "string"}}
 """
-
-        def leader_fn():
             res = gl.nondet.exec_prompt(prompt, response_format="json")
             if not isinstance(res, dict):
                 raise gl.UserError("Invalid LLM response")
