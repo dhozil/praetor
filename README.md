@@ -34,14 +34,15 @@ When a milestone is rejected, either party can open a dispute. Both submit state
 ┌─────────────────────────────────────────────────────────┐
 │                      Browser (UI)                       │
 │  TanStack Start · React 19 · Tailwind · shadcn/ui       │
-│  EIP-6963 Wallet (MetaMask + GenLayer Snap)             │
+│  EIP-6963 Wallet (Rabby / MetaMask + GenLayer Snap)     │
 └────────────────────────┬────────────────────────────────┘
-                         │ writeContract / readContract
+                         │ write → wallet (eth_sendTransaction)
+                         │ read  → proxy (/api/rpc)
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│              GenLayer Bradbury Network                   │
+│              GenLayer Studionet                          │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │           PraetorV2 Intelligent Contract         │   │
+│  │           Praetor Intelligent Contract           │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │   │
 │  │  │Marketplace│  │  Escrow  │  │   AI Verify   │  │   │
 │  │  │ post/apply│  │  release │  │ LLM consensus │  │   │
@@ -59,17 +60,24 @@ When a milestone is rejected, either party can open a dispute. Both submit state
 
 | Decision | Rationale |
 |---|---|
-| **AI verifies, not humans** | Every milestone is checked by GenLayer's `gl.nondet.exec_prompt` across multiple validators. No middlemen, no delays, no bias. |
+| **AI verifies, not humans** | Every milestone is checked by GenLayer's `gl.nondet.exec_prompt` across multiple validators. Evidence URLs are actually fetched via `gl.nondet.web.get()` — validators read the real content. |
 | **Funds locked at post time** | The client deposits the full milestone amount when posting. The contract holds it until AI verification or dispute resolution. |
 | **5-jury AI dispute** | Disputes are resolved by 5 independent LLM validators. The AI leader proposes a verdict; validators must agree within tolerance. |
-| **Rate-limited reads** | Bradbury RPC has strict rate limits. All contract reads go through a global queue (200ms spacing, 3 retries) + localStorage cache (30s TTL). |
-| **Progressive loading** | Marketplace shows job IDs immediately (1 call), loads details in background. UI is never blocked. |
+| **Same-origin RPC proxy** | All contract reads go through `/api/rpc` proxy (Cloudflare Pages worker) — bypasses CORS restrictions from Studio API. |
+| **Per-call localStorage cache** | Read results cached for 2 minutes — reduces RPC calls, no global rate limiter. Cache invalidated on every successful write. |
+| **Auto-polling** | Marketplace and Dashboard refresh every 15 seconds — cross-device updates appear automatically. |
+| **Web-fetched evidence** | `verify_milestone` now uses `gl.nondet.web.get()`/`render()` to fetch actual content from GitHub, Live URL, Figma, Docs — AI evaluates the real content, not just URL strings. |
 
 ---
 
 ## Intelligent Contract
 
-Written in Python using `py-genlayer`. Deployed on Studionet at **`0x616829166C487d12254898f1BD615Fd5FBcDCb2d`**.
+Written in Python using `py-genlayer`. Deployed on **Studionet** at **`0x2668fac9cB3e70bc70Fda924DbF95c355bce1b22`**.
+
+Deploy:
+```bash
+genlayer deploy --contract contracts/praetor.py --rpc https://studio.genlayer.com/api --args 2
+```
 
 ### View Functions
 
@@ -82,12 +90,17 @@ Written in Python using `py-genlayer`. Deployed on Studionet at **`0x616829166C4
 | `get_freelancer_jobs(addr)` | All job IDs for a freelancer |
 | `get_escrow(id)` | Full escrow data (milestones, status, parties) |
 | `get_escrow_status(id)` | Current status string |
+| `get_escrow_by_job(jobId)` | Escrow ID for a given job ID |
+| `get_escrow_counter()` | Total escrows created |
 | `get_verification(escrowId, milestoneIdx)` | AI verification result (passed, score, reasoning) |
 | `is_verified(escrowId, milestoneIdx)` | Boolean pass/fail |
-| `get_praetor_score(addr)` | On-chain reputation score (0–100) |
 | `get_dispute(id)` | Full dispute data |
-| `get_event(id)` | Audit event |
+| `get_dispute_counter()` | Total disputes opened |
+| `get_praetor_score(addr)` | On-chain reputation score (0–100) |
+| `get_profile(addr)` | Full reputation profile (name, jobs, disputes, earnings) |
+| `get_event(id)` | Audit event by ID |
 | `get_escrow_events(escrowId)` | All audit events for an escrow |
+| `get_total_events()` | Total audit events logged |
 
 ### Write Functions
 
@@ -96,25 +109,31 @@ Written in Python using `py-genlayer`. Deployed on Studionet at **`0x616829166C4
 | `post_job(...)` | Create job posting with milestones, send budget |
 | `apply_job(jobId)` | Apply as freelancer |
 | `assign_freelancer(jobId, addr)` | Assign freelancer, creates escrow, locks funds |
-| `submit_evidence(escrowId, milestoneIdx, url)` | Freelancer submits proof of work |
-| `verify_milestone(...)` | Trigger AI verification (evidence → LLM consensus → score) |
-| `release_payment(escrowId, milestoneIdx)` | Client releases milestone payment |
+| `submit_evidence(escrowId, milestoneIdx, url)` | Freelancer submits proof of work on-chain |
+| `verify_milestone(...)` | Trigger AI verification (fetch evidence content → LLM consensus → score) |
+| `release_payment(escrowId, milestoneIdx)` | Client releases milestone payment (auto-records reputation) |
 | `open_dispute(...)` | Either party opens a dispute with statements + evidence |
 | `cast_juror_vote(disputeId, vote, reasoning)` | Juror votes (client/freelancer/split) |
 | `resolve_dispute(disputeId)` | AI aggregates juror votes into final verdict |
-| `execute_dispute_verdict(disputeId)` | Releases funds to winner per verdict, closes escrow |
-| `get_dispute_counter()` | Current dispute count |
+| `execute_dispute_verdict(disputeId)` | Releases funds to winner per verdict (auto-records dispute result) |
+| `register_user(displayName, role)` | Register on-chain profile for reputation tracking |
+| `record_job(addr, role, amount, completed)` | Record a completed job to reputation |
+| `record_dispute_result(addr, won)` | Record dispute outcome to reputation |
 
 ### AI Verification Flow
 
 ```
-1. Freelancer calls verify_milestone(escrowId, milestoneIdx, evidence[])
-2. Contract builds a prompt: job description + milestone details + evidence list
-3. gl.nondet.exec_prompt (leader) → {"passed": bool, "score": int, "reasoning": str}
-4. gl.vm.run_nondet_unsafe:
+1. Freelancer calls verify_milestone(escrowId, milestoneIdx, evidence[], types[])
+2. Leader fetches each evidence URL via gl.nondet.web.get() / render():
+   - GitHub → gl.nondet.web.get()
+   - Live URL / Figma / Docs → gl.nondet.web.render(mode="text")
+3. Contract builds a prompt with the FETCHED content (not just URLs)
+4. gl.nondet.exec_prompt (leader) → {"passed": bool, "score": int, "reasoning": str}
+5. gl.vm.run_nondet_unsafe:
    - Leader generates result
-   - Validator checks: abs(my_score - leader_score) <= 15
-5. If consensus → milestone marked verified/rejected, result stored on-chain
+   - Validators independently re-fetch URLs + re-run AI
+   - Consensus if: abs(validator_score - leader_score) <= 15
+6. If consensus → milestone marked verified/rejected, result stored on-chain
 ```
 
 ---
@@ -124,27 +143,33 @@ Written in Python using `py-genlayer`. Deployed on Studionet at **`0x616829166C4
 | Tab | What it does |
 |---|---|
 | **Marketplace** | Browse all open jobs. Apply as freelancer. Post a new job (budget locked immediately). Random fill for quick testing. |
-| **Dashboard** | Role toggle (client/freelancer). See your jobs, escrows, applicants, milestones. Assign freelancer directly. |
-| **AI Verify** | Pick an escrow + milestone. Attach evidence (URLs, types). See AI consensus step-by-step: leader proposes → validators check → result rendered. |
-| **Release** | Select escrow + milestone. Client releases payment after verification passes. |
-| **Dispute** | End-to-end flow: Open dispute → cast 5 juror votes → AI resolution → execute verdict (funds released on-chain). Built-in random fill examples. |
+| **Dashboard** | Role toggle (client/freelancer). See your jobs, escrows, applicants, milestones. Assign freelancer directly. Auto-refresh every 15s. |
+| **AI Verify** | Pick an escrow + milestone. Attach evidence (GitHub, Live URL, Figma, Docs). Submit evidence on-chain. See AI consensus step-by-step: leader fetches URLs → validators verify → result. |
+| **Release** | Select escrow + milestone. Client releases payment. Auto-records reputation for both parties. |
+| **Dispute** | End-to-end flow: Open dispute → cast 5 juror votes → AI resolution → execute verdict (funds released on-chain, dispute result recorded). Built-in random fill examples. |
 | **History** | Completed jobs grouped by role. Milestone breakdown, escrow status, verification results. |
-| **Reputation** | Look up any wallet's on-chain Praetor score and completed job count. |
+| **Reputation** | Register profile (name + role). Auto-displays your stats on connect: score, jobs posted/worked, disputes won, earnings. Look up any wallet. |
 
 ---
 
 ## Getting Started
 
 ```bash
-bun install
-bun run dev          # → http://localhost:8080
-bun run build        # Production build → .output/
+pnpm install
+pnpm run dev          # → http://localhost:8080
+pnpm run build        # Production build → dist/
 ```
 
 ### Prerequisites
-- [MetaMask](https://metamask.io/) with GenLayer Snap installed (auto-prompted on first write)
-- A wallet funded with GEN on Bradbury (use [faucet](https://faucet-bradbury.genlayer.com))
-- Contract deployed on Studionet at `0x616829166C487d12254898f1BD615Fd5FBcDCb2d`
+- **Rabby Wallet** or **MetaMask** (GenLayer Snap optional for Studio)
+- A wallet funded with GEN on Studionet (use faucet at [studio.genlayer.com](https://studio.genlayer.com))
+- Contract deployed on Studionet at `0x2668fac9cB3e70bc70Fda924DbF95c355bce1b22`
+
+### Deploy to Cloudflare Pages
+```bash
+npm run build
+npx nitro deploy --prebuilt
+```
 
 ---
 
@@ -153,15 +178,15 @@ bun run build        # Production build → .output/
 | Layer | Technology |
 |---|---|
 | Framework | TanStack Start v1 (React 19, SSR) |
-| Build | Vite 8 |
+| Build | Vite 8 + Nitro |
 | Styling | Tailwind CSS v4 |
 | UI | shadcn/ui (Radix primitives) |
 | Icons | Lucide React |
-| Intelligent Contract | Python (`py-genlayer`) |
+| Intelligent Contract | Python (`py-genlayer`) via GenLayer CLI |
 | GenLayer SDK | `genlayer-js` v1.2.0 |
-| Wallet Discovery | EIP-6963 |
-| RPC | `https://rpc-bradbury.genlayer.com` |
-| Chain ID | `4221` (`0x107d`) |
+| Wallet Discovery | EIP-6963 (Rabby / MetaMask) |
+| RPC | `https://studio.genlayer.com/api` (via `/api/rpc` proxy) |
+| Chain ID | `61999` (`0xf22f`) |
 
 ---
 
@@ -170,20 +195,21 @@ bun run build        # Production build → .output/
 ```
 src/
 ├── lib/
-│   ├── genlayer-client.ts      # Full contract wrapper (read/write, cache, rate limiter)
+│   ├── genlayer-client.ts      # Full contract wrapper (read/write, cache, proxy)
 │   ├── genlayer-network.ts     # Network config, chain constants, contract address
 │   └── wallet.tsx              # EIP-6963 multi-wallet provider
 ├── routes/
-│   ├── features.tsx            # All 7 tabs in one file (~1400 lines)
+│   ├── features.tsx            # All 7 tabs (~1760 lines)
 │   └── index.tsx               # Landing page with hero + feature cards
 ├── components/
 │   ├── RomanCandle.tsx         # Candle melt animation for transaction feedback
 │   └── ui/                     # ~40 shadcn/ui primitives
+├── server.ts                   # Cloudflare Pages worker (CORS proxy + SSR)
 ├── styles.css                  # Verdigris & Ivory theme
 ├── router.tsx
 ├── routeTree.gen.ts
 └── contracts/
-    └── praetor.py              # PraetorV2 — 697 lines of GenLayer Python
+    └── praetor.py              # Praetor Intelligent Contract (~780 lines)
 ```
 
 ---
