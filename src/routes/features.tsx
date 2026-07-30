@@ -1521,34 +1521,40 @@ function DisputeDemo() {
               {/* Escrow & milestone picker */}
               <div className="rounded-xl border border-gold/20 p-4 space-y-3">
                 <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">1. Select escrow</div>
-                <select
-                  value={escrowId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val) {
-                      const [eid, midx] = val.split(":");
-                      const escrow = myDisputeEscrows.find((x) => x.escrowId?.toString() === eid);
-                      if (escrow) {
-                        selectDisputeEscrow(escrow, parseInt(midx));
+                {loadingEscrows ? (
+                  <div className="text-xs text-muted-foreground text-center py-2">Loading your escrows…</div>
+                ) : myDisputeEscrows.length === 0 ? (
+                  <div className="text-xs text-muted-foreground text-center py-4">No milestones ready for dispute. Complete a verification first (AI Verify tab), then disputed/rejected milestones will appear here.</div>
+                ) : (
+                  <select
+                    value={escrowId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val) {
+                        const [eid, midx] = val.split(":");
+                        const escrow = myDisputeEscrows.find((x) => x.escrowId?.toString() === eid);
+                        if (escrow) {
+                          selectDisputeEscrow(escrow, parseInt(midx));
+                        }
+                      } else {
+                        setEscrowId("");
                       }
-                    } else {
-                      setEscrowId("");
-                    }
-                  }}
-                  className="input w-full text-sm"
-                >
-                  <option value="">— Select escrow —</option>
-                  {myDisputeEscrows.map((escrow) =>
-                    (escrow.milestones || []).map((ms: any, i: number) => {
-                      if (ms.status !== "verified" && ms.status !== "rejected") return null;
-                      return (
-                        <option key={escrow.escrowId?.toString() + ":" + i} value={escrow.escrowId?.toString() + ":" + i}>
-                          #{escrow.escrowId?.toString()} — {escrow.jobTitle || escrow.job_title} — M{i + 1}: {ms.title}
-                        </option>
-                      );
-                    })
-                  )}
-                </select>
+                    }}
+                    className="input w-full text-sm"
+                  >
+                    <option value="">— Select escrow —</option>
+                    {myDisputeEscrows.map((escrow) =>
+                      (escrow.milestones || []).map((ms: any, i: number) => {
+                        if (ms.status !== "verified" && ms.status !== "rejected") return null;
+                        return (
+                          <option key={escrow.escrowId?.toString() + ":" + i} value={escrow.escrowId?.toString() + ":" + i}>
+                            #{escrow.escrowId?.toString()} — {escrow.jobTitle || escrow.job_title} — M{i + 1}: {ms.title}
+                          </option>
+                        );
+                      })
+                    )}
+                  </select>
+                )}
               </div>
 
               {/* Selected escrow info */}
