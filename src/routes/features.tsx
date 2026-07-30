@@ -1205,12 +1205,20 @@ function ReleaseDemo() {
       subtitle="Only the client can release. The milestone must be verified first."
       left={
         <div className="space-y-4">
-          <div className="rounded-xl border border-gold/20 p-4 space-y-2">
+          <div className="rounded-xl border border-gold/20 p-4 space-y-3">
             <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Release funds</div>
-            <div className="flex gap-2">
-              <input value={escrowId} onChange={(e) => setEscrowId(e.target.value)} className="input flex-1" placeholder="Escrow ID" />
-              <input value={milestoneIndex} onChange={(e) => setMilestoneIndex(e.target.value)} className="input w-20" placeholder="MS #" />
+            <div className="flex gap-3 items-end">
+              <div className="flex-1">
+                <div className="text-[10px] text-muted-foreground mb-1">Escrow ID</div>
+                <input value={escrowId} onChange={(e) => setEscrowId(e.target.value)} className="input w-full" placeholder="e.g. 0" />
+              </div>
+              <div className="w-24">
+                <div className="text-[10px] text-muted-foreground mb-1">Milestone</div>
+                <input value={milestoneIndex} onChange={(e) => setMilestoneIndex(e.target.value)} className="input w-full" placeholder="0" />
+              </div>
+              <button onClick={() => { setEscrowId("0"); setMilestoneIndex("0"); }} type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-gold/20 px-3 py-[11px] text-xs text-gold-soft hover:bg-gold/5 transition-colors"><Sparkles className="h-3 w-3" /> Fill</button>
             </div>
+            <p className="text-[10px] text-muted-foreground">Only the client can release. The milestone must be verified first.</p>
           </div>
 
           {!connected && <div className="rounded-lg border border-gold/20 bg-gold/5 p-2 text-xs text-gold-soft text-center">Connect wallet to release</div>}
