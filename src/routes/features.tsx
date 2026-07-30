@@ -1620,6 +1620,15 @@ function ReputationDemo() {
   const [regRole, setRegRole] = useState<"client" | "freelancer">("freelancer");
   const [regLoading, setRegLoading] = useState(false);
   const [regDone, setRegDone] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  // Check if already registered on mount
+  useEffect(() => {
+    if (!account) { setChecking(false); return; }
+    getPraetorScore(account).then((score) => {
+      if (score > 0n) setRegDone(true);
+    }).catch(() => {}).finally(() => setChecking(false));
+  }, [account]);
 
   const trimmed = handle.trim();
 
@@ -1652,7 +1661,7 @@ function ReputationDemo() {
       left={
         <div className="space-y-4">
           {/* Register section */}
-          {connected && !regDone && (
+          {connected && !checking && !regDone && (
             <div className="rounded-xl border border-gold/20 p-4 space-y-3">
               <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Register your profile</div>
               <div className="flex gap-2">
