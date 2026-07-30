@@ -850,21 +850,24 @@ function VerifyDemo() {
   const [result, setResult] = useState<{ passed: boolean; score: number; reasoning: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Fetch user's assigned jobs (as freelancer) for the escrow picker
+  // Fetch user's assigned jobs (as freelancer or client) for the escrow picker
   const [myEscrows, setMyEscrows] = useState<any[]>([]);
   useEffect(() => {
     if (!account) return;
     (async () => {
       try {
-        const ids = await getFreelancerJobs(account);
-        const list: any[] = [];
-        for (const id of ids) {
+        const [fIds, cIds] = await Promise.all([
+          getFreelancerJobs(account).catch(() => []),
+          getClientJobs(account).catch(() => []),
+        ]);
+        const allIds = [...new Set([...fIds, ...cIds])];
+        const entries = await Promise.all(allIds.map(async (id) => {
           try {
             const job = await getJob(id);
             if (job.status === "assigned") {
               const escrowId = await getEscrowByJob(id);
               const escrow = escrowId !== null ? await getEscrow(escrowId) : null;
-              list.push({
+              return {
                 jobId: id,
                 title: job.title,
                 jobDescription: escrow?.job_description || job.description || "",
@@ -874,11 +877,12 @@ function VerifyDemo() {
                   amount: job.milestone_amounts?.[i] || 0n,
                   status: "pending",
                 })) || [],
-              });
+              };
             }
           } catch { /* */ }
-        }
-        setMyEscrows(list);
+          return null;
+        }));
+        setMyEscrows(entries.filter(Boolean));
       } catch { /* */ }
     })();
   }, [account]);
