@@ -1632,6 +1632,13 @@ function ReputationDemo() {
 
   const trimmed = handle.trim();
 
+  // Auto-load my profile after register check
+  const [myProfile, setMyProfile] = useState<any>(null);
+  useEffect(() => {
+    if (!regDone || !account) return;
+    getProfile(account).then(setMyProfile).catch(() => {});
+  }, [regDone, account]);
+
   const lookup = async () => {
     if (!trimmed) return;
     setLoading(true);
@@ -1654,16 +1661,51 @@ function ReputationDemo() {
     setRegLoading(false);
   };
 
+  const ProfileCard = ({ p, address }: { p: any; address?: string }) => (
+    <div className="rounded-xl border border-gold/20 bg-black/20 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Praetor Score</div>
+          <div className="font-display text-3xl text-gold-gradient">{Number(p.praetor_score || 0n)}</div>
+        </div>
+        <Badge status={p.role === "freelancer" ? "active" : "open"} />
+      </div>
+      <div className="text-xs text-marble font-medium">{p.display_name}</div>
+      {address && <div className="text-[10px] font-mono text-muted-foreground">{address.slice(0, 8)}…{address.slice(-6)}</div>}
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div className="rounded-lg bg-gold/5 p-2">
+          <div className="text-muted-foreground">Total jobs</div>
+          <div className="text-marble font-medium">{Number(p.total_jobs || 0n)}</div>
+        </div>
+        <div className="rounded-lg bg-green-500/5 p-2">
+          <div className="text-muted-foreground">Completed</div>
+          <div className="text-green-400 font-medium">{Number(p.completed_jobs || 0n)}</div>
+        </div>
+        <div className="rounded-lg bg-red-500/5 p-2">
+          <div className="text-muted-foreground">Disputes</div>
+          <div className="text-red-400 font-medium">{Number(p.disputed_jobs || 0n)}</div>
+        </div>
+        <div className="rounded-lg bg-gold/5 p-2">
+          <div className="text-muted-foreground">Won disputes</div>
+          <div className="text-gold-soft font-medium">{Number(p.won_disputes || 0n)}</div>
+        </div>
+      </div>
+      {p.total_earned > 0n && <div className="text-xs text-muted-foreground">Total earned: <span className="text-gold-soft">{Number(p.total_earned) / 1e18} GEN</span></div>}
+      {p.total_spent > 0n && <div className="text-xs text-muted-foreground">Total spent: <span className="text-gold-soft">{Number(p.total_spent) / 1e18} GEN</span></div>}
+    </div>
+  );
+
   return (
     <DemoShell
       title="Praetor Reputation Score"
-      subtitle="Register your profile, then look up any wallet's on-chain record."
+      subtitle="Your on-chain reputation — completed jobs, dispute record, and overall Praetor score."
       left={
         <div className="space-y-4">
           {/* Register section */}
           {connected && !checking && !regDone && (
             <div className="rounded-xl border border-gold/20 p-4 space-y-3">
               <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Register your profile</div>
+              <p className="text-xs text-muted-foreground">Create your on-chain Praetor identity to start building reputation.</p>
               <div className="flex gap-2">
                 <input value={regName} onChange={(e) => setRegName(e.target.value)} className="input flex-1" placeholder="Display name" />
                 <select value={regRole} onChange={(e) => setRegRole(e.target.value as any)} className="input w-28">
@@ -1674,55 +1716,30 @@ function ReputationDemo() {
               </div>
             </div>
           )}
-          {regDone && <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-3 text-xs text-green-400">Profile registered! Your Praetor score starts at 50.</div>}
+          {checking && <div className="text-xs text-muted-foreground text-center">Checking registration…</div>}
 
-          {/* Lookup */}
-          <Field label="Wallet address">
-            <div className="flex gap-2">
-              <span className="grid h-11 w-11 place-items-center rounded-lg border border-gold/30 bg-gold/5 text-gold"><Wallet className="h-4 w-4" /></span>
-              <input value={handle} onChange={(e) => setHandle(e.target.value)} className="input flex-1" placeholder="0x…" />
-              <button onClick={lookup} disabled={!trimmed || loading} className="btn-ghost-gold rounded-lg px-4 text-sm font-medium">Look up</button>
+          {/* My profile */}
+          {regDone && myProfile && account && (
+            <div>
+              <div className="text-xs uppercase tracking-[0.25em] text-gold-soft mb-2">My Profile</div>
+              <ProfileCard p={myProfile} address={account} />
             </div>
-          </Field>
+          )}
+
+          {/* Lookup other wallets */}
+          <div className="rounded-xl border border-gold/15 bg-black/10 p-3 space-y-2">
+            <div className="text-[10px] uppercase tracking-wider text-gold-soft">Look up another wallet</div>
+            <div className="flex gap-2">
+              <input value={handle} onChange={(e) => setHandle(e.target.value)} className="input flex-1 text-xs" placeholder="0x…" />
+              <button onClick={lookup} disabled={!trimmed || loading} className="btn-ghost-gold rounded-lg px-3 text-xs font-medium">Look up</button>
+            </div>
+          </div>
 
           {profile ? (
-            <div className="rounded-xl border border-gold/20 bg-black/20 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Praetor Score</div>
-                  <div className="font-display text-3xl text-gold-gradient">{Number(profile.praetor_score || 0n)}</div>
-                </div>
-                <Badge status={profile.role === "freelancer" ? "active" : "open"} />
-              </div>
-              <div className="text-xs text-marble font-medium">{profile.display_name}</div>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="rounded-lg bg-gold/5 p-2">
-                  <div className="text-muted-foreground">Total jobs</div>
-                  <div className="text-marble font-medium">{Number(profile.total_jobs || 0n)}</div>
-                </div>
-                <div className="rounded-lg bg-green-500/5 p-2">
-                  <div className="text-muted-foreground">Completed</div>
-                  <div className="text-green-400 font-medium">{Number(profile.completed_jobs || 0n)}</div>
-                </div>
-                <div className="rounded-lg bg-red-500/5 p-2">
-                  <div className="text-muted-foreground">Disputes</div>
-                  <div className="text-red-400 font-medium">{Number(profile.disputed_jobs || 0n)}</div>
-                </div>
-                <div className="rounded-lg bg-gold/5 p-2">
-                  <div className="text-muted-foreground">Won disputes</div>
-                  <div className="text-gold-soft font-medium">{Number(profile.won_disputes || 0n)}</div>
-                </div>
-              </div>
-              {profile.total_earned > 0n && (
-                <div className="text-xs text-muted-foreground">Total earned: <span className="text-gold-soft">{Number(profile.total_earned) / 1e18} GEN</span></div>
-              )}
-              {profile.total_spent > 0n && (
-                <div className="text-xs text-muted-foreground">Total spent: <span className="text-gold-soft">{Number(profile.total_spent) / 1e18} GEN</span></div>
-              )}
-            </div>
+            <ProfileCard p={profile} address={trimmed} />
           ) : trimmed && !loading ? (
             <div className="rounded-xl border border-gold/20 bg-black/20 p-4 text-center text-xs text-muted-foreground">
-              <span className="font-mono text-gold-soft">{trimmed}</span> has no profile yet. Register to start building reputation.
+              <span className="font-mono text-gold-soft">{trimmed}</span> has no profile yet.
             </div>
           ) : null}
           {loading && <div className="text-xs text-muted-foreground text-center">Looking up…</div>}
