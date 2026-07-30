@@ -1038,34 +1038,40 @@ function VerifyDemo() {
 
             {escrowId && (
               <>
-                {/* Milestone picker */}
-                {myEscrows.find((e) => e.jobId.toString() === escrowId)?.milestones?.length > 1 && (
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-gold-soft mb-1">2. Select milestone</div>
-                    <select
-                      value={milestoneIndex}
-                      onChange={(e) => {
-                        const idx = e.target.value;
-                        setMilestoneIndex(idx);
-                        const entry = myEscrows.find((x) => x.jobId.toString() === escrowId);
-                        if (entry?.milestones?.[parseInt(idx)]) {
-                          const ms = entry.milestones[parseInt(idx)];
-                          setMilestoneTitle(ms.title || "");
-                          setMilestoneDescription(ms.description || "");
-                        }
-                      }}
-                      className="input w-full text-sm"
-                    >
-                      {myEscrows
-                        .find((e) => e.jobId.toString() === escrowId)
-                        ?.milestones?.map((ms: any, i: number) => (
-                          <option key={i} value={i.toString()}>
-                            Milestone {i + 1}: {ms.title} ({Number(ms.amount) / 1e18} GEN) — {ms.status}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                )}
+                {/* Milestone picker — only pending/rejected milestones shown */}
+                {(() => {
+                  const entry = myEscrows.find((e) => e.jobId.toString() === escrowId);
+                  const avail = entry?.milestones?.filter((m: any) => m.status !== "verified" && m.status !== "paid") || [];
+                  return avail.length > 1 ? (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-gold-soft mb-1">2. Select milestone</div>
+                      <select
+                        value={milestoneIndex}
+                        onChange={(e) => {
+                          const idx = e.target.value;
+                          setMilestoneIndex(idx);
+                          if (entry?.milestones?.[parseInt(idx)]) {
+                            const ms = entry.milestones[parseInt(idx)];
+                            setMilestoneTitle(ms.title || "");
+                            setMilestoneDescription(ms.description || "");
+                          }
+                        }}
+                        className="input w-full text-sm"
+                      >
+                        {entry?.milestones?.map((ms: any, i: number) => {
+                          const done = ms.status === "verified" || ms.status === "paid";
+                          return (
+                            <option key={i} value={i.toString()} disabled={done}>
+                              Milestone {i + 1}: {ms.title} ({Number(ms.amount) / 1e18} GEN) — {ms.status} {done ? "(done)" : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  ) : avail.length === 1 ? null : (
+                    <div className="text-xs text-muted-foreground">All milestones have been verified or paid.</div>
+                  );
+                })()}
 
                 {/* Auto-filled context (read-only) */}
                 <div className="rounded-lg bg-black/20 p-3 space-y-1.5 text-xs">
@@ -1348,8 +1354,49 @@ function DisputeDemo() {
 
   const [escrowId, setEscrowId] = useState("");
   const [milestoneIdx, setMilestoneIdx] = useState("");
-  const [client, setClient] = useState("");
-  const [freelancer, setFreelancer] = useState("");
+  const [clientStmt, setClientStmt] = useState("");
+  const [freelancerStmt, setFreelancerStmt] = useState("");
+  const [clientAddr, setClientAddr] = useState("");
+  const [freelancerAddr, setFreelancerAddr] = useState("");
+
+  // Auto-load user's escrows for dispute picker
+  const [myDisputeEscrows, setMyDisputeEscrows] = useState<any[]>([]);
+  const [loadingEscrows, setLoadingEscrows] = useState(true);
+
+  useEffect(() => {
+    if (!account) { setLoadingEscrows(false); return; }
+    (async () => {
+      setLoadingEscrows(true);
+      try {
+        const [cIds, fIds] = await Promise.all([getClientJobs(account).catch(() => []), getFreelancerJobs(account).catch(() => [])]);
+        const allIds = [...new Set([...cIds, ...fIds])];
+        const results: any[] = [];
+        for (const id of allIds) {
+          try {
+            const job = await getJob(id);
+            if (job.status === "assigned") {
+              const eid = await getEscrowByJob(id);
+              if (eid !== null) {
+                const escrow = await getEscrow(eid);
+                if (escrow) results.push({ ...escrow, escrowId: eid, jobTitle: job.title, jobId: id });
+              }
+            }
+          } catch { /* */ }
+        }
+        setMyDisputeEscrows(results);
+      } catch { /* */ }
+      setLoadingEscrows(false);
+    })();
+  }, [account]);
+
+  const selectDisputeEscrow = (escrow: any, msIdx: number) => {
+    setEscrowId(escrow.escrowId.toString());
+    setMilestoneIdx(msIdx.toString());
+    setClientAddr(escrow.client || "");
+    setFreelancerAddr(escrow.freelancer || "");
+  };
+
+  const canOpen = escrowId.trim().length > 0 && clientStmt.trim().length > 0 && freelancerStmt.trim().length > 0 && connected;
 
   const [disputeId, setDisputeId] = useState<bigint | null>(null);
   const [txHash, setTxHash] = useState("");
@@ -1363,13 +1410,11 @@ function DisputeDemo() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const canOpen = escrowId.trim().length > 0 && client.trim().length > 0 && freelancer.trim().length > 0 && connected;
-
   const handleOpen = async () => {
     if (!canOpen || !account) return;
     setError(""); setLoading(true);
     try {
-      const hash = await openDispute(account, BigInt(escrowId), BigInt(milestoneIdx || "0"), client, [], freelancer, []);
+      const hash = await openDispute(account, BigInt(escrowId), BigInt(milestoneIdx || "0"), clientStmt, [], freelancerStmt, []);
       setTxHash(hash);
       await waitForReceipt(hash);
       const events = await getEscrowEvents(BigInt(escrowId));
@@ -1433,7 +1478,7 @@ function DisputeDemo() {
   };
 
   const reset = () => {
-    setStep("open"); setEscrowId(""); setMilestoneIdx(""); setClient(""); setFreelancer("");
+    setStep("open"); setEscrowId(""); setMilestoneIdx(""); setClientStmt(""); setFreelancerStmt(""); setClientAddr(""); setFreelancerAddr("");
     setDisputeId(null); setTxHash(""); setJuryVotes([]);
     setCurrentVote({ vote: "client", reasoning: "" });
     setResolution(null); setExecution(null); setError("");
@@ -1467,24 +1512,75 @@ function DisputeDemo() {
 
           {step === "open" && (
             <div className="space-y-4">
-              <div className="flex gap-2">
-                <Field label="Escrow ID">
-                  <input type="number" step="1" value={escrowId} onChange={(e) => setEscrowId(e.target.value)} className="input" placeholder="Escrow ID" />
-                </Field>
-                <Field label="Milestone">
-                  <input type="number" step="1" value={milestoneIdx} onChange={(e) => setMilestoneIdx(e.target.value)} className="input w-20" placeholder="0" />
-                </Field>
-              </div>
+              {/* Auto-loaded escrows */}
+              {loadingEscrows ? (
+                <div className="text-xs text-muted-foreground text-center">Loading your escrows…</div>
+              ) : myDisputeEscrows.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Your escrows</div>
+                  <div className="rounded-xl border border-gold/20 divide-y divide-gold/10 text-sm max-h-60 overflow-y-auto">
+                    {myDisputeEscrows.map((escrow) => (
+                      <div key={escrow.escrowId?.toString()}>
+                        <div className="px-3 py-2 text-xs font-mono text-gold-soft">#{escrow.escrowId?.toString()} — {escrow.jobTitle || escrow.job_title}</div>
+                        {escrow.milestones?.map((ms: any, i: number) => {
+                          const canDispute = ms.status === "verified" || ms.status === "rejected";
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => canDispute && selectDisputeEscrow(escrow, i)}
+                              disabled={!canDispute}
+                              className={`w-full flex items-center justify-between px-4 py-2 text-left hover:bg-gold/5 transition-all ${
+                                escrowId === escrow.escrowId?.toString() && milestoneIdx === i.toString() ? "bg-gold/10" : ""
+                              } disabled:opacity-40`}
+                            >
+                              <span className="text-sm text-marble">{ms.title}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">{Number(ms.amount) / 1e18} GEN</span>
+                                <Badge status={ms.status} />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Manual entry */}
+              <details className="text-xs">
+                <summary className="cursor-pointer text-gold-soft hover:text-foreground">Or enter manually</summary>
+                <div className="mt-3 space-y-3">
+                  <div className="flex gap-2">
+                    <Field label="Escrow ID">
+                      <input type="number" step="1" value={escrowId} onChange={(e) => setEscrowId(e.target.value)} className="input" placeholder="Escrow ID" />
+                    </Field>
+                    <Field label="Milestone">
+                      <input type="number" step="1" value={milestoneIdx} onChange={(e) => setMilestoneIdx(e.target.value)} className="input w-20" placeholder="0" />
+                    </Field>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Client's address">
+                      <input value={clientAddr} onChange={(e) => setClientAddr(e.target.value)} className="input font-mono text-xs" placeholder="0x…" />
+                    </Field>
+                    <Field label="Freelancer's address">
+                      <input value={freelancerAddr} onChange={(e) => setFreelancerAddr(e.target.value)} className="input font-mono text-xs" placeholder="0x…" />
+                    </Field>
+                  </div>
+                </div>
+              </details>
+
+              {/* Statements */}
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Client's statement">
-                  <textarea value={client} onChange={(e) => setClient(e.target.value)} rows={4} placeholder="Explain the client's position…" className="input resize-none" />
+                  <textarea value={clientStmt} onChange={(e) => setClientStmt(e.target.value)} rows={4} placeholder="Explain the client's position…" className="input resize-none" />
                 </Field>
                 <Field label="Freelancer's statement">
-                  <textarea value={freelancer} onChange={(e) => setFreelancer(e.target.value)} rows={4} placeholder="Explain the freelancer's position…" className="input resize-none" />
+                  <textarea value={freelancerStmt} onChange={(e) => setFreelancerStmt(e.target.value)} rows={4} placeholder="Explain the freelancer's position…" className="input resize-none" />
                 </Field>
               </div>
-              <button onClick={() => { const pick = examples[Math.floor(Math.random() * examples.length)]; setEscrowId(pick.escrowId); setMilestoneIdx(pick.milestoneIdx); setClient(pick.client); setFreelancer(pick.freelancer); }} type="button" className="inline-flex items-center gap-2 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors">
-                <Sparkles className="h-3.5 w-3.5" /> Random fill
+              <button onClick={() => { const pick = examples[Math.floor(Math.random() * examples.length)]; setEscrowId(pick.escrowId); setMilestoneIdx(pick.milestoneIdx); setClientStmt(pick.client); setFreelancerStmt(pick.freelancer); }} type="button" className="inline-flex items-center gap-2 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors">
+                <Sparkles className="h-3.5 w-3.5" /> Random fill example
               </button>
               <button onClick={handleOpen} disabled={!canOpen || loading} className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                 {loading ? "Opening…" : "Open dispute"}
