@@ -1328,7 +1328,7 @@ function ReleaseDemo() {
           )}
 
           {selectedMs && (
-            <button onClick={release} disabled={selectedMs.status !== "verified" || stage === "releasing"}
+            <button onClick={release} disabled={selectedMs.status !== "verified" || stage === "releasing" || stage === "released"}
               className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {stage === "released" ? "✓ Payment released" : stage === "releasing" ? "Releasing…" : stage === "error" ? "Retry" : selectedMs.status === "paid" ? "Already paid" : "Release payment"}
