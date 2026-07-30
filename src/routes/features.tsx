@@ -681,22 +681,22 @@ function DashboardDemo() {
       left={
         <div className="space-y-3">
           <div className="flex gap-2">
-            <button onClick={() => setRole("client")} className={`flex-1 rounded-xl py-2 text-xs font-medium transition-all ${role === "client" ? "btn-gold text-primary-foreground" : "border border-gold/20 text-muted-foreground hover:bg-gold/5"}`}>
-              <Briefcase className="mx-auto mb-0.5 h-3.5 w-3.5" /> As Client
+            <button onClick={() => setRole("client")} className={`flex-1 rounded-xl py-2.5 text-sm font-medium transition-all ${role === "client" ? "btn-gold text-primary-foreground" : "border border-gold/20 text-muted-foreground hover:bg-gold/5"}`}>
+              <Briefcase className="mx-auto mb-0.5 h-4 w-4" /> As Client
             </button>
-            <button onClick={() => setRole("freelancer")} className={`flex-1 rounded-xl py-2 text-xs font-medium transition-all ${role === "freelancer" ? "btn-gold text-primary-foreground" : "border border-gold/20 text-muted-foreground hover:bg-gold/5"}`}>
-              <UserCheck className="mx-auto mb-0.5 h-3.5 w-3.5" /> As Freelancer
+            <button onClick={() => setRole("freelancer")} className={`flex-1 rounded-xl py-2.5 text-sm font-medium transition-all ${role === "freelancer" ? "btn-gold text-primary-foreground" : "border border-gold/20 text-muted-foreground hover:bg-gold/5"}`}>
+              <UserCheck className="mx-auto mb-0.5 h-4 w-4" /> As Freelancer
             </button>
           </div>
 
-          <button onClick={refresh} className="inline-flex items-center gap-1.5 text-xs text-gold-soft hover:text-foreground">
-            <ExternalLink className="h-3 w-3" /> Refresh
+          <button onClick={refresh} className="inline-flex items-center gap-1.5 text-sm text-gold-soft hover:text-foreground">
+            <ExternalLink className="h-4 w-4" /> Refresh
           </button>
 
           {jobIds.length === 0 ? (
             <EmptyState text={role === "client" ? "You haven't posted any jobs yet." : "No jobs assigned to you yet. Browse Marketplace to apply."} />
           ) : (
-            <div className="rounded-xl border border-gold/20 divide-y divide-gold/10 text-xs">
+            <div className="rounded-xl border border-gold/20 divide-y divide-gold/10 text-sm">
               {jobIds.map((id) => {
                 const job = jobs.get(id.toString());
                 const escrow = escrows.get(id.toString());
@@ -704,25 +704,25 @@ function DashboardDemo() {
                   <div key={id.toString()}>
                     <button
                       onClick={() => setExpanded(expanded === id ? null : id)}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-gold/5 transition-colors"
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gold/5 transition-colors"
                     >
                       <span className="font-mono text-gold-soft shrink-0">#{id.toString()}</span>
                       <span className="flex-1 truncate text-marble font-medium">{job?.title || "…"}</span>
                       {job && <span className="text-muted-foreground shrink-0">{Number(job.total_budget || 0n) / 1e18} GEN</span>}
                       <Badge status={job?.status || "open"} />
                       {role === "client" && job?.status === "open" && applicants.has(id.toString()) && (
-                        <span className="shrink-0 text-gold-soft text-[10px]">{applicants.get(id.toString())?.length || 0} app</span>
+                        <span className="shrink-0 text-gold-soft text-xs">{applicants.get(id.toString())?.length || 0} app</span>
                       )}
                       {escrow && <span className="text-muted-foreground">{escrow.milestones?.filter((m: any) => m.status === "verified" || m.status === "paid").length || 0}/{escrow.milestones?.length || 0} done</span>}
                     </button>
                     {expanded === id && job && (
-                      <div className="px-3 pb-3 space-y-2 text-xs">
-                        <p className="text-marble">{job.description}</p>
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-                          <span>Budget: <span className="text-gold-soft">{Number(job.total_budget) / 1e18} GEN</span></span>
+                      <div className="px-4 pb-4 space-y-3 text-sm">
+                        <p className="text-marble leading-relaxed">{job.description}</p>
+                        <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-muted-foreground">
+                          <span>Budget: <span className="text-gold-soft font-medium">{Number(job.total_budget) / 1e18} GEN</span></span>
                           <span>Status: <Badge status={job.status} /></span>
                           {job.milestone_titles?.length > 0 && (
-                            <span>Milestones: <span className="text-marble">{job.milestone_titles.length}</span></span>
+                            <span>Milestones: <span className="text-marble font-medium">{job.milestone_titles.length}</span></span>
                           )}
                           {job.assigned_freelancer && job.assigned_freelancer !== "0x0000000000000000000000000000000000000000" && (
                             <span>Freelancer: <span className="font-mono text-marble">{job.assigned_freelancer.slice(0, 6)}…{job.assigned_freelancer.slice(-4)}</span></span>
@@ -730,8 +730,8 @@ function DashboardDemo() {
                         </div>
                         {/* Milestone list from JobPosting */}
                         {job.milestone_titles?.length > 0 && (
-                          <div className="rounded-lg border border-gold/15 bg-black/20 p-3 space-y-1">
-                            <div className="text-gold-soft uppercase tracking-wider text-[10px]">Milestones</div>
+                          <div className="rounded-lg border border-gold/15 bg-black/20 p-3 space-y-1.5">
+                            <div className="text-xs uppercase tracking-wider text-gold-soft">Milestones</div>
                             {job.milestone_titles.map((title: string, i: number) => {
                               const amount = job.milestone_amounts?.[i] || 0n;
                               const msEscrow = escrow?.milestones?.[i];
@@ -739,21 +739,21 @@ function DashboardDemo() {
                               const vDetail = verifyDetails.get(vKey);
                               return (
                                 <div key={i}>
-                                  <div className="flex items-center justify-between py-0.5">
+                                  <div className="flex items-center justify-between py-1">
                                     <span className="text-marble">{title}</span>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-3">
                                       <span className="text-muted-foreground">{Number(amount) / 1e18} GEN</span>
                                       {msEscrow && <Badge status={msEscrow.status} />}
-                                      {msEscrow?.ai_score > 0 && <span className="text-gold-soft">{msEscrow.ai_score}/100</span>}
+                                      {msEscrow?.ai_score > 0 && <span className="text-gold-soft font-medium">{msEscrow.ai_score}/100</span>}
                                       {(msEscrow?.status === "verified" || msEscrow?.status === "rejected") && !vDetail && (
-                                        <button onClick={async () => { try { const eid = escrow?.escrowId || await getEscrowByJob(id); const r = await getVerification(eid, BigInt(i)); if (r) setVerifyDetails((m) => { const n = new Map(m); n.set(vKey, r); return n; }); } catch {} }} className="text-[10px] text-gold-soft hover:text-foreground underline">details</button>
+                                        <button onClick={async () => { try { const eid = escrow?.escrowId || await getEscrowByJob(id); const r = await getVerification(eid, BigInt(i)); if (r) setVerifyDetails((m) => { const n = new Map(m); n.set(vKey, r); return n; }); } catch {} }} className="text-xs text-gold-soft hover:text-foreground underline">details</button>
                                       )}
                                     </div>
                                   </div>
                                   {vDetail && (
-                                    <div className="ml-2 mb-1.5 p-2 rounded bg-black/30 text-[10px] space-y-1">
-                                      <div className={vDetail.passed ? "text-green-400" : "text-red-400"}>{vDetail.passed ? "✓ Passed" : "✗ Rejected"} — Score: {vDetail.score}/100</div>
-                                      <div className="text-muted-foreground">{vDetail.reasoning}</div>
+                                    <div className="ml-2 mb-2 p-3 rounded bg-black/30 text-xs space-y-1.5 border border-gold/10">
+                                      <div className={`font-medium ${vDetail.passed ? "text-green-400" : "text-red-400"}`}>{vDetail.passed ? "✓ Passed" : "✗ Rejected"} — Score: {vDetail.score}/100</div>
+                                      <div className="text-muted-foreground leading-relaxed">{vDetail.reasoning}</div>
                                     </div>
                                   )}
                                 </div>
@@ -763,8 +763,8 @@ function DashboardDemo() {
                         )}
                         {/* Escrow details */}
                         {escrow && (
-                          <div className="rounded-lg border border-gold/15 bg-black/20 p-3 space-y-1">
-                            <div className="text-gold-soft uppercase tracking-wider text-[10px]">Escrow</div>
+                          <div className="rounded-lg border border-gold/15 bg-black/20 p-3 space-y-1.5">
+                            <div className="text-xs uppercase tracking-wider text-gold-soft">Escrow</div>
                             <div className="flex justify-between text-muted-foreground">
                               <span>ID: <span className="font-mono text-marble">{escrow.job_id?.toString()}</span></span>
                               <span>Status: <Badge status={escrow.status} /></span>
@@ -774,17 +774,17 @@ function DashboardDemo() {
                         {/* Applicants for client open jobs */}
                         {role === "client" && job.status === "open" && applicants.has(id.toString()) && (
                           <div>
-                            <div className="text-[10px] uppercase tracking-wider text-gold-soft mb-2">Applicants ({applicants.get(id.toString())?.length || 0})</div>
+                            <div className="text-xs uppercase tracking-wider text-gold-soft mb-2">Applicants ({applicants.get(id.toString())?.length || 0})</div>
                             <div className="space-y-1.5">
                               {applicants.get(id.toString())?.map((a: string) => (
-                                <div key={a} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
+                                <div key={a} className="flex items-center justify-between bg-black/20 rounded-lg px-4 py-2.5">
                                   <div className="flex items-center gap-2 font-mono text-marble">
-                                    <UserCheck className="h-3.5 w-3.5 text-gold-soft" />
+                                    <UserCheck className="h-4 w-4 text-gold-soft" />
                                     <span>{a.slice(0, 8)}…{a.slice(-6)}</span>
                                   </div>
                                   <button
                                     onClick={async () => { const h = await assignFreelancer(account!, id, a); await waitForReceipt(h); invalidateAllCache(); await refresh(); }}
-                                    className="rounded-lg border border-gold/20 px-3 py-1 text-gold-soft hover:bg-gold/5 text-[11px] font-medium"
+                                    className="rounded-lg border border-gold/20 px-3 py-1.5 text-gold-soft hover:bg-gold/5 text-xs font-medium"
                                   >
                                     Assign
                                   </button>
