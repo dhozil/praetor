@@ -1668,7 +1668,7 @@ function ReputationDemo() {
           <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Praetor Score</div>
           <div className="font-display text-3xl text-gold-gradient">{Number(p.praetor_score || 0n)}</div>
         </div>
-        <Badge status={p.role === "freelancer" ? "active" : "open"} />
+        <span className="rounded-lg border border-gold/20 px-2 py-0.5 text-[10px] uppercase tracking-wider text-gold-soft">{p.role}</span>
       </div>
       <div className="text-xs text-marble font-medium">{p.display_name}</div>
       {address && <div className="text-[10px] font-mono text-muted-foreground">{address.slice(0, 8)}…{address.slice(-6)}</div>}
