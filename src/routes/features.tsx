@@ -56,6 +56,12 @@ import {
   resolveDispute,
   executeDisputeVerdict,
   waitForReceipt,
+  submitEvidence,
+  registerUser,
+  recordJob,
+  recordDisputeResult,
+  getProfile,
+  getPraetorScore,
 } from "@/lib/genlayer-client";
 import shieldImg from "@/assets/gold-shield.png";
 
@@ -1086,6 +1092,9 @@ function VerifyDemo() {
                   <button onClick={() => setItems((prev) => prev.filter((x) => x.id !== it.id))} className="text-muted-foreground hover:text-foreground"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
+              <button onClick={async () => { for (const it of items) { try { const h = await submitEvidence(account!, BigInt(escrowId), BigInt(milestoneIndex), it.url); await waitForReceipt(h); } catch { /* */ } } invalidateAllCache(); }} type="button" className="inline-flex items-center gap-1.5 text-xs text-gold-soft hover:text-foreground mt-1">
+                <ExternalLink className="h-3 w-3" /> Submit evidence on-chain
+              </button>
             </div>
           )}
 
@@ -1584,37 +1593,113 @@ function HistoryDemo() {
 }
 
 function ReputationDemo() {
+  const { account, connected } = useWallet();
   const [handle, setHandle] = useState("");
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Register state
+  const [regName, setRegName] = useState("");
+  const [regRole, setRegRole] = useState<"client" | "freelancer">("freelancer");
+  const [regLoading, setRegLoading] = useState(false);
+  const [regDone, setRegDone] = useState(false);
+
   const trimmed = handle.trim();
-  const hasHandle = trimmed.length > 0;
+
+  const lookup = async () => {
+    if (!trimmed) return;
+    setLoading(true);
+    try {
+      const p = await getProfile(trimmed);
+      setProfile(p);
+    } catch { setProfile(null); }
+    setLoading(false);
+  };
+
+  const handleRegister = async () => {
+    if (!account || !regName.trim()) return;
+    setRegLoading(true);
+    try {
+      const h = await registerUser(account, regName.trim(), regRole);
+      await waitForReceipt(h);
+      invalidateAllCache();
+      setRegDone(true);
+    } catch { /* */ }
+    setRegLoading(false);
+  };
 
   return (
     <DemoShell
       title="Praetor Reputation Score"
-      subtitle="Every completed milestone mints an on-chain badge. Look up any wallet to see their record."
+      subtitle="Register your profile, then look up any wallet's on-chain record."
       left={
         <div className="space-y-4">
-          <Field label="Wallet or ENS handle">
-            <div className="flex gap-2">
-              <span className="grid h-11 w-11 place-items-center rounded-lg border border-gold/30 bg-gold/5 text-gold"><Wallet className="h-4 w-4" /></span>
-              <input value={handle} onChange={(e) => setHandle(e.target.value)} className="input flex-1" placeholder="0x… or yourname.eth" />
-            </div>
-          </Field>
-          {!hasHandle ? (
-            <EmptyState text="Enter a wallet or ENS handle to look up its on-chain reputation." />
-          ) : (
-            <div className="glass-card rounded-2xl p-6">
-              <div className="flex items-baseline justify-between">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Praetor Score</div>
-                  <div className="font-display text-4xl text-muted-foreground">Not indexed yet</div>
-                </div>
+          {/* Register section */}
+          {connected && !regDone && (
+            <div className="rounded-xl border border-gold/20 p-4 space-y-3">
+              <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Register your profile</div>
+              <div className="flex gap-2">
+                <input value={regName} onChange={(e) => setRegName(e.target.value)} className="input flex-1" placeholder="Display name" />
+                <select value={regRole} onChange={(e) => setRegRole(e.target.value as any)} className="input w-28">
+                  <option value="freelancer">Freelancer</option>
+                  <option value="client">Client</option>
+                </select>
+                <button onClick={handleRegister} disabled={regLoading || !regName.trim()} className="btn-gold rounded-lg px-4 text-sm font-medium disabled:opacity-50">{regLoading ? "…" : "Register"}</button>
               </div>
-              <p className="mt-4 text-sm text-muted-foreground">
-                <span className="font-mono text-gold-soft">{trimmed}</span> has no completed jobs recorded on Praetor.
-              </p>
             </div>
           )}
+          {regDone && <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-3 text-xs text-green-400">Profile registered! Your Praetor score starts at 50.</div>}
+
+          {/* Lookup */}
+          <Field label="Wallet address">
+            <div className="flex gap-2">
+              <span className="grid h-11 w-11 place-items-center rounded-lg border border-gold/30 bg-gold/5 text-gold"><Wallet className="h-4 w-4" /></span>
+              <input value={handle} onChange={(e) => setHandle(e.target.value)} className="input flex-1" placeholder="0x…" />
+              <button onClick={lookup} disabled={!trimmed || loading} className="btn-ghost-gold rounded-lg px-4 text-sm font-medium">Look up</button>
+            </div>
+          </Field>
+
+          {profile ? (
+            <div className="rounded-xl border border-gold/20 bg-black/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Praetor Score</div>
+                  <div className="font-display text-3xl text-gold-gradient">{Number(profile.praetor_score || 0n)}</div>
+                </div>
+                <Badge status={profile.role === "freelancer" ? "active" : "open"} />
+              </div>
+              <div className="text-xs text-marble font-medium">{profile.display_name}</div>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-lg bg-gold/5 p-2">
+                  <div className="text-muted-foreground">Total jobs</div>
+                  <div className="text-marble font-medium">{Number(profile.total_jobs || 0n)}</div>
+                </div>
+                <div className="rounded-lg bg-green-500/5 p-2">
+                  <div className="text-muted-foreground">Completed</div>
+                  <div className="text-green-400 font-medium">{Number(profile.completed_jobs || 0n)}</div>
+                </div>
+                <div className="rounded-lg bg-red-500/5 p-2">
+                  <div className="text-muted-foreground">Disputes</div>
+                  <div className="text-red-400 font-medium">{Number(profile.disputed_jobs || 0n)}</div>
+                </div>
+                <div className="rounded-lg bg-gold/5 p-2">
+                  <div className="text-muted-foreground">Won disputes</div>
+                  <div className="text-gold-soft font-medium">{Number(profile.won_disputes || 0n)}</div>
+                </div>
+              </div>
+              {profile.total_earned > 0n && (
+                <div className="text-xs text-muted-foreground">Total earned: <span className="text-gold-soft">{Number(profile.total_earned) / 1e18} GEN</span></div>
+              )}
+              {profile.total_spent > 0n && (
+                <div className="text-xs text-muted-foreground">Total spent: <span className="text-gold-soft">{Number(profile.total_spent) / 1e18} GEN</span></div>
+              )}
+            </div>
+          ) : trimmed && !loading ? (
+            <div className="rounded-xl border border-gold/20 bg-black/20 p-4 text-center text-xs text-muted-foreground">
+              <span className="font-mono text-gold-soft">{trimmed}</span> has no profile yet. Register to start building reputation.
+            </div>
+          ) : null}
+          {loading && <div className="text-xs text-muted-foreground text-center">Looking up…</div>}
         </div>
       }
       right={

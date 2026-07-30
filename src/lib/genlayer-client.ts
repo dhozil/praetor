@@ -520,6 +520,87 @@ export async function getPraetorScore(walletAddress: string): Promise<bigint> {
   return result as bigint;
 }
 
+// ─── Reputation Write ─────────────────────────────────────────────────────────
+
+export async function registerUser(
+  walletAddress: string,
+  displayName: string,
+  role: string,
+): Promise<string> {
+  const txHash = await getWriteClient(walletAddress).writeContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "register_user",
+    args: [displayName, role],
+    value: BigInt(0),
+  });
+  return txHash as string;
+}
+
+export async function recordJob(
+  walletAddress: string,
+  userAddress: string,
+  role: string,
+  amount: bigint,
+  completed: boolean,
+): Promise<string> {
+  const txHash = await getWriteClient(walletAddress).writeContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "record_job",
+    args: [userAddress, role, amount, completed],
+    value: BigInt(0),
+  });
+  return txHash as string;
+}
+
+export async function recordDisputeResult(
+  walletAddress: string,
+  userAddress: string,
+  won: boolean,
+): Promise<string> {
+  const txHash = await getWriteClient(walletAddress).writeContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "record_dispute_result",
+    args: [userAddress, won],
+    value: BigInt(0),
+  });
+  return txHash as string;
+}
+
+// ─── Reputation Read ──────────────────────────────────────────────────────────
+
+export async function getProfile(walletAddress: string): Promise<any> {
+  const result = await cachedRead("profile:" + walletAddress.toLowerCase(), () =>
+    readClient.readContract({
+      address: PRAETOR_ADDRESS,
+      functionName: "get_profile",
+      args: [walletAddress],
+    }),
+  );
+  return result;
+}
+
+export async function getEvent(eventId: bigint): Promise<any> {
+  const result = await cachedRead("event:" + eventId.toString(), () =>
+    readClient.readContract({
+      address: PRAETOR_ADDRESS,
+      functionName: "get_event",
+      args: [eventId],
+    }),
+  );
+  return result;
+}
+
+export async function getTotalEvents(): Promise<bigint> {
+  const result = await cachedRead("totalEvents", () =>
+    readClient.readContract({
+      address: PRAETOR_ADDRESS,
+      functionName: "get_total_events",
+      args: [],
+    }),
+  );
+  return result as bigint;
+}
+
 // ─── Transaction Utilities ──────────────────────────────────────────────────
 
 export async function waitForReceipt(
