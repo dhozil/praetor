@@ -1368,6 +1368,8 @@ function DisputeDemo() {
   const [freelancerStmt, setFreelancerStmt] = useState("");
   const [clientAddr, setClientAddr] = useState("");
   const [freelancerAddr, setFreelancerAddr] = useState("");
+  // Composite key "escrowId:milestoneIdx" for dropdown value
+  const dropdownVal = escrowId && milestoneIdx ? escrowId + ":" + milestoneIdx : "";
 
   // Auto-load user's escrows for dispute picker
   const [myDisputeEscrows, setMyDisputeEscrows] = useState<any[]>([]);
@@ -1535,7 +1537,7 @@ function DisputeDemo() {
                   <div className="text-xs text-muted-foreground text-center py-4">No milestones ready for dispute. Complete a verification first (AI Verify tab), then disputed/rejected milestones will appear here.</div>
                 ) : (
                   <select
-                    value={escrowId}
+                    value={dropdownVal}
                     onChange={(e) => {
                       const val = e.target.value;
                       if (val) {
