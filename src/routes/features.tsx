@@ -1421,39 +1421,43 @@ function DisputeDemo() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [debugInfo, setDebugInfo] = useState("");
 
   const handleOpen = async () => {
     if (!canOpen || !account) return;
-    setError(""); setLoading(true);
+    setError(""); setLoading(true); setDebugInfo("");
     try {
       const hash = await openDispute(account, BigInt(escrowId), BigInt(milestoneIdx || "0"), clientStmt, [], freelancerStmt, []);
       setTxHash(hash);
       await waitForReceipt(hash);
       invalidateAllCache();
+      setDebugInfo("tx OK, escrowId=" + escrowId);
       // Find dispute ID from events, else read fresh dispute counter (with retries)
       let found = false;
       try {
         const events = await getEscrowEvents(BigInt(escrowId));
+        setDebugInfo("events=" + (events?.length ?? 0));
         const discEvent = events.find((e: any) => e.description?.includes("Dispute #"));
-        if (discEvent) { const m = discEvent.description.match(/#(\d+)/); if (m) { setDisputeId(BigInt(m[1])); found = true; } }
-      } catch { /* */ }
+        if (discEvent) { const m = discEvent.description.match(/#(\d+)/); if (m) { setDisputeId(BigInt(m[1])); found = true; setDebugInfo("found via event Dispute #" + m[1]); } }
+      } catch (e: any) { setDebugInfo("events ERR: " + (e?.message || e)); }
       if (!found) {
         for (let attempt = 0; attempt < 10; attempt++) {
           try {
             const c = await getDisputeCounterFresh();
+            setDebugInfo("counter=" + c.toString());
             if (c > 0n) {
-              // iterate all disputes (newest first) to find one matching our escrow
               for (let i = Number(c) - 1; i >= 0; i--) {
                 const d = await getDisputeFresh(BigInt(i));
                 if (d && d.escrow_id?.toString() === escrowId) {
                   setDisputeId(BigInt(i));
                   found = true;
+                  setDebugInfo("found dispute #" + i);
                   break;
                 }
               }
               if (found) break;
             }
-          } catch { /* */ }
+          } catch (e: any) { setDebugInfo("counter ERR: " + (e?.message || e)); }
           await new Promise((r) => setTimeout(r, 2000));
         }
       }
@@ -1638,6 +1642,7 @@ function DisputeDemo() {
                     <input value={manualDisputeId} onChange={(e) => setManualDisputeId(e.target.value)} className="input flex-1 text-center font-mono" placeholder="Dispute ID (manual)" />
                   </div>
                 )}
+                {debugInfo && <div className="rounded-lg bg-black/20 p-2 text-[10px] text-muted-foreground font-mono break-all">{debugInfo}</div>}
                 <button onClick={handleResolve} disabled={loading} className="btn-gold rounded-full px-8 py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                   {loading ? "AI resolving…" : "Resolve with AI"}
                 </button>
