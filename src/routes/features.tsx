@@ -1612,7 +1612,7 @@ function DisputeDemo() {
                   <textarea value={freelancerStmt} onChange={(e) => setFreelancerStmt(e.target.value)} rows={4} placeholder="Explain the freelancer's position…" className="input resize-none" />
                 </Field>
               </div>
-              <button onClick={() => { const pick = examples[Math.floor(Math.random() * examples.length)]; setEscrowId(pick.escrowId); setMilestoneIdx(pick.milestoneIdx); setClientStmt(pick.client); setFreelancerStmt(pick.freelancer); }} type="button" className="inline-flex items-center gap-2 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors">
+              <button onClick={() => { const pick = examples[Math.floor(Math.random() * examples.length)]; setClientStmt(pick.client); setFreelancerStmt(pick.freelancer); }} type="button" className="inline-flex items-center gap-2 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors">
                 <Sparkles className="h-3.5 w-3.5" /> Random fill example
               </button>
               <button onClick={handleOpen} disabled={!canOpen || loading} className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
