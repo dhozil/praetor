@@ -330,7 +330,11 @@ function MarketplaceDemo() {
     if (!canPost) return;
     setPosting(true);
     try {
-      const amountWei = BigInt(Math.round(totalBudget * 10 ** 18));
+      const amountWei = (() => {
+        const [w, f = ""] = budget.trim().split(".");
+        const frac = f.padEnd(18, "0").slice(0, 18);
+        return BigInt(w || "0") * 10n ** 18n + BigInt(frac || "0");
+      })();
       const perMs = amountWei / BigInt(validMs.length);
       const txHash = await postJob(account, {
         title: title.trim(),
