@@ -386,7 +386,7 @@ class PraetorV2(gl.Contract):
         ms.status = "paid"
         escrow.milestones[idx] = ms
 
-        freelancer = _EOA(Address(escrow.freelancer))
+        freelancer = _EOA(escrow.freelancer)
         freelancer.emit_transfer(value=u256(payout))
 
         all_paid = True
@@ -633,7 +633,7 @@ Respond ONLY as JSON:
             self._record_dispute_result(str(escrow.freelancer), True)
             self._record_dispute_result(str(escrow.client), False)
         elif verdict == "client":
-            _EOA(Address(escrow.client)).emit_transfer(value=u256(amount))
+            _EOA(escrow.client).emit_transfer(value=u256(amount))
             ms.status = "refunded"
             escrow.winner = escrow.client
             self._log_event("dispute_resolved", escrow_id,
@@ -643,8 +643,8 @@ Respond ONLY as JSON:
         else:  # split
             half = amount // 2
             remainder = amount - half
-            _EOA(Address(escrow.client)).emit_transfer(value=u256(half))
-            _EOA(Address(escrow.freelancer)).emit_transfer(value=u256(remainder))
+            _EOA(escrow.client).emit_transfer(value=u256(half))
+            _EOA(escrow.freelancer).emit_transfer(value=u256(remainder))
             ms.status = "split"
             escrow.winner = Address("0x0000000000000000000000000000000000000000")
             self._log_event("dispute_resolved", escrow_id,
