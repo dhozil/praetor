@@ -148,7 +148,7 @@ class PraetorV2(gl.Contract):
     # Fee
     platform_fee_percent: u8
 
-    def __init__(self, platform_fee_percent: u8):
+    def __init__(self, platform_fee_percent: int):
         self.job_counter = u256(0)
         self.escrow_counter = u256(0)
         self.platform_fee_percent = platform_fee_percent
@@ -165,10 +165,10 @@ class PraetorV2(gl.Contract):
         description: str,
         milestone_titles: DynArray[str],
         milestone_descriptions: DynArray[str],
-        milestone_amounts: DynArray[u256],
+        milestone_amounts: DynArray[int],
         evidence_types: DynArray[str],
         requirements: str,
-    ) -> u256:
+    ) -> int:
         if len(milestone_titles) == 0:
             raise gl.vm.UserError("At least one milestone required")
         if len(milestone_titles) != len(milestone_descriptions):
@@ -213,7 +213,7 @@ class PraetorV2(gl.Contract):
         return job_id
 
     @gl.public.write
-    def apply_job(self, job_id: u256):
+    def apply_job(self, job_id: int):
         job = self.job_postings[job_id]
         if job.status != "open":
             raise gl.vm.UserError("Job is not open")
@@ -226,7 +226,7 @@ class PraetorV2(gl.Contract):
         self._log_event("job_applied", job_id, f"Freelancer applied to job #{job_id}")
 
     @gl.public.write
-    def assign_freelancer(self, job_id: u256, freelancer_address: str):
+    def assign_freelancer(self, job_id: int, freelancer_address: str):
         job = self.job_postings[job_id]
         if job.status != "open":
             raise gl.vm.UserError("Job is not open")
@@ -259,7 +259,7 @@ class PraetorV2(gl.Contract):
         self._log_event("freelancer_assigned", escrow_id,
                         f"Freelancer assigned to job #{job_id}, escrow #{escrow_id}")
 
-    def _create_escrow_from_job(self, job: JobPosting, freelancer: Address, job_id: u256) -> u256:
+    def _create_escrow_from_job(self, job: JobPosting, freelancer: Address, job_id: int) -> int:
         escrow_id = self.escrow_counter
         self.escrow_counter = self.escrow_counter + u256(1)
 
@@ -294,33 +294,33 @@ class PraetorV2(gl.Contract):
     # ── Marketplace: View Methods ────────────────────────────────────────────
 
     @gl.public.view
-    def get_open_jobs(self) -> DynArray[u256]:
+    def get_open_jobs(self) -> DynArray[int]:
         return self.open_job_ids
 
     @gl.public.view
-    def get_job(self, job_id: u256) -> JobPosting:
+    def get_job(self, job_id: int) -> JobPosting:
         return self.job_postings[job_id]
 
     @gl.public.view
-    def get_applicants(self, job_id: u256) -> DynArray[Address]:
+    def get_applicants(self, job_id: int) -> DynArray[Address]:
         return self.job_postings[job_id].applicants
 
     @gl.public.view
-    def get_client_jobs(self, client_address: str) -> DynArray[u256]:
+    def get_client_jobs(self, client_address: str) -> DynArray[int]:
         addr = Address(client_address)
         if addr not in self.client_job_ids:
             return []
         return self.client_job_ids[addr]
 
     @gl.public.view
-    def get_freelancer_jobs(self, freelancer_address: str) -> DynArray[u256]:
+    def get_freelancer_jobs(self, freelancer_address: str) -> DynArray[int]:
         addr = Address(freelancer_address)
         if addr not in self.freelancer_job_ids:
             return []
         return self.freelancer_job_ids[addr]
 
     @gl.public.view
-    def get_job_by_escrow(self, escrow_id: u256) -> u256:
+    def get_job_by_escrow(self, escrow_id: int) -> int:
         for jid in self.job_postings:
             if self.job_postings[jid].status == "assigned":
                 if jid in self.job_to_escrow and self.job_to_escrow[jid] == escrow_id:
@@ -328,29 +328,29 @@ class PraetorV2(gl.Contract):
         return u256(2**256 - 1)
 
     @gl.public.view
-    def get_escrow_by_job(self, job_id: u256) -> u256:
+    def get_escrow_by_job(self, job_id: int) -> int:
         if job_id not in self.job_to_escrow:
             return u256(2**256 - 1)
         return self.job_to_escrow[job_id]
 
     @gl.public.view
-    def get_escrow_counter(self) -> u256:
+    def get_escrow_counter(self) -> int:
         return self.escrow_counter
 
     # ── Escrow View Methods ──────────────────────────────────────────────────
 
     @gl.public.view
-    def get_escrow(self, escrow_id: u256) -> Escrow:
+    def get_escrow(self, escrow_id: int) -> Escrow:
         return self.escrows[escrow_id]
 
     @gl.public.view
-    def get_escrow_status(self, escrow_id: u256) -> str:
+    def get_escrow_status(self, escrow_id: int) -> str:
         return self.escrows[escrow_id].status
 
     # ── Escrow Write Methods ─────────────────────────────────────────────────
 
     @gl.public.write
-    def submit_evidence(self, escrow_id: u256, milestone_index: u256, evidence_url: str):
+    def submit_evidence(self, escrow_id: int, milestone_index: int, evidence_url: str):
         escrow = self.escrows[escrow_id]
         if gl.message.sender_address != escrow.freelancer:
             raise gl.vm.UserError("Only freelancer can submit evidence")
@@ -367,7 +367,7 @@ class PraetorV2(gl.Contract):
                         f"Milestone {milestone_index} evidence submitted")
 
     @gl.public.write
-    def release_payment(self, escrow_id: u256, milestone_index: u256):
+    def release_payment(self, escrow_id: int, milestone_index: int):
         escrow = self.escrows[escrow_id]
         if gl.message.sender_address != escrow.client:
             raise gl.vm.UserError("Only client can release payment")
@@ -404,8 +404,8 @@ class PraetorV2(gl.Contract):
     @gl.public.write
     def verify_milestone(
         self,
-        escrow_id: u256,
-        milestone_index: u256,
+        escrow_id: int,
+        milestone_index: int,
         evidence_urls: DynArray[str],
         evidence_types: DynArray[str],
         job_description: str,
@@ -500,14 +500,14 @@ Respond ONLY as JSON:
         return verification
 
     @gl.public.view
-    def is_verified(self, escrow_id: u256, milestone_index: u256) -> bool:
+    def is_verified(self, escrow_id: int, milestone_index: int) -> bool:
         key = f"{escrow_id}_{milestone_index}"
         if key not in self.verifications:
             return False
         return self.verifications[key].passed
 
     @gl.public.view
-    def get_verification(self, escrow_id: u256, milestone_index: u256) -> VerificationResult:
+    def get_verification(self, escrow_id: int, milestone_index: int) -> VerificationResult:
         key = f"{escrow_id}_{milestone_index}"
         if key not in self.verifications:
             return VerificationResult(passed=False, score=u8(0), reasoning="Not verified", evidence_count=u8(0))
@@ -518,13 +518,13 @@ Respond ONLY as JSON:
     @gl.public.write
     def open_dispute(
         self,
-        escrow_id: u256,
-        milestone_index: u256,
+        escrow_id: int,
+        milestone_index: int,
         client_statement: str,
         client_evidence: DynArray[str],
         freelancer_statement: str,
         freelancer_evidence: DynArray[str],
-    ) -> u256:
+    ) -> int:
         dispute_id = self.dispute_counter
         self.dispute_counter = self.dispute_counter + u256(1)
 
@@ -554,7 +554,7 @@ Respond ONLY as JSON:
         return dispute_id
 
     @gl.public.write
-    def cast_juror_vote(self, dispute_id: u256, vote: str, reasoning: str):
+    def cast_juror_vote(self, dispute_id: int, vote: str, reasoning: str):
         dispute = self.disputes[dispute_id]
         if dispute.resolved:
             raise gl.vm.UserError("Dispute already resolved")
@@ -568,7 +568,7 @@ Respond ONLY as JSON:
         self.disputes[dispute_id] = dispute
 
     @gl.public.write
-    def resolve_dispute(self, dispute_id: u256) -> str:
+    def resolve_dispute(self, dispute_id: int) -> str:
         dispute = self.disputes[dispute_id]
         if dispute.resolved:
             raise gl.vm.UserError("Already resolved")
@@ -594,19 +594,24 @@ Respond ONLY as JSON:
             return out
 
         def leader_fn() -> dict:
+            work_section = "WORK CONTENT: none"
+            if work_evidence:
+                work_section = "WORK CONTENT:" + fetch_evidence([work_evidence])
+            client_ev = fetch_evidence(client_evidence)
+            freelancer_ev = fetch_evidence(freelancer_evidence)
             prompt = f"""
 You are an AI dispute resolver for Praetor escrow platform.
 The freelancer submitted work for a milestone and it was evaluated. One party disagrees with the result.
 
 MILESTONE: {work_title}
 FREELANCER'S SUBMITTED WORK (evidence URL): {work_evidence}
-{("WORK CONTENT:\n" + fetch_evidence([work_evidence])) if work_evidence else "WORK CONTENT: none"}
+{work_section}
 
 CLIENT'S STATEMENT: {client_stmt}
-CLIENT'S EVIDENCE:{fetch_evidence(client_evidence)}
+CLIENT'S EVIDENCE:{client_ev}
 
 FREELANCER'S STATEMENT: {freelancer_stmt}
-FREELANCER'S EVIDENCE:{fetch_evidence(freelancer_evidence)}
+FREELANCER'S EVIDENCE:{freelancer_ev}
 
 Evaluate the submitted work and both arguments. Decide who should receive the funds.
 Respond ONLY as JSON:
@@ -638,15 +643,15 @@ Respond ONLY as JSON:
         return result["verdict"]
 
     @gl.public.view
-    def get_dispute(self, dispute_id: u256) -> Dispute:
+    def get_dispute(self, dispute_id: int) -> Dispute:
         return self.disputes[dispute_id]
 
     @gl.public.view
-    def get_dispute_counter(self) -> u256:
+    def get_dispute_counter(self) -> int:
         return self.dispute_counter
 
     @gl.public.write
-    def execute_dispute_verdict(self, dispute_id: u256):
+    def execute_dispute_verdict(self, dispute_id: int):
         dispute = self.disputes[dispute_id]
         if not dispute.resolved:
             raise gl.vm.UserError("Dispute not yet resolved")
@@ -730,7 +735,7 @@ Respond ONLY as JSON:
         )
 
     @gl.public.write
-    def record_job(self, user_address: str, role: str, amount: u256, completed: bool):
+    def record_job(self, user_address: str, role: str, amount: int, completed: bool):
         user = Address(user_address)
         p = self.profiles[user]
         p.total_jobs = p.total_jobs + u256(1)
@@ -749,7 +754,7 @@ Respond ONLY as JSON:
         self._record_dispute_result(user_address, won)
 
     @gl.public.view
-    def get_praetor_score(self, user_address: str) -> u256:
+    def get_praetor_score(self, user_address: str) -> int:
         user = Address(user_address)
         if user not in self.profiles:
             return u256(0)
@@ -759,7 +764,7 @@ Respond ONLY as JSON:
     def get_profile(self, user_address: str) -> ReputationProfile:
         return self.profiles[Address(user_address)]
 
-    def _calc_score(self, p: ReputationProfile) -> u256:
+    def _calc_score(self, p: ReputationProfile) -> int:
         if p.total_jobs == u256(0):
             return u256(50)
         completion = (p.completed_jobs * u256(100)) / p.total_jobs
@@ -772,11 +777,11 @@ Respond ONLY as JSON:
     # ── Audit Trail Methods ─────────────────────────────────────────────────
 
     @gl.public.view
-    def get_event(self, event_id: u256) -> AuditEvent:
+    def get_event(self, event_id: int) -> AuditEvent:
         return self.audit_events[event_id]
 
     @gl.public.view
-    def get_escrow_events(self, escrow_id: u256) -> DynArray[AuditEvent]:
+    def get_escrow_events(self, escrow_id: int) -> DynArray[AuditEvent]:
         if escrow_id not in self.escrow_event_index:
             return []
         result: DynArray[AuditEvent] = []
@@ -785,10 +790,10 @@ Respond ONLY as JSON:
         return result
 
     @gl.public.view
-    def get_total_events(self) -> u256:
+    def get_total_events(self) -> int:
         return self.event_counter
 
-    def _log_event(self, event_type: str, entity_id: u256, description: str):
+    def _log_event(self, event_type: str, entity_id: int, description: str):
         eid = self.event_counter
         self.event_counter = self.event_counter + u256(1)
         self.audit_events[eid] = AuditEvent(
