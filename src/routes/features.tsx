@@ -1216,7 +1216,7 @@ function ReleaseDemo() {
       await waitForReceipt(txHash);
       try {
         const ms = selectedEscrow.milestones?.[milestoneIndex];
-        const amount = ms?.amount || 0n;
+        const amount = BigInt(ms?.amount || 0n);
         await recordJob(account!, selectedEscrow.client, "client", amount, true).catch(() => {});
         await recordJob(account!, selectedEscrow.freelancer, "freelancer", amount, true).catch(() => {});
         invalidateAllCache();

@@ -178,7 +178,7 @@ class PraetorV2(gl.Contract):
 
         total = u256(0)
         for amt in milestone_amounts:
-            total = total + amt
+            total = total + u256(int(amt))
         if gl.message.value < total:
             raise gl.vm.UserError("Insufficient funds sent")
 
@@ -268,7 +268,7 @@ class PraetorV2(gl.Contract):
             milestones.append(Milestone(
                 title=job.milestone_titles[i],
                 description=job.milestone_descriptions[i],
-                amount=job.milestone_amounts[i],
+                amount=int(job.milestone_amounts[i]),
                 evidence_types=job.evidence_types[i] if i < len(job.evidence_types) else "",
                 status="pending",
                 evidence_url="",
@@ -377,7 +377,7 @@ class PraetorV2(gl.Contract):
         if not ms.verified:
             raise gl.vm.UserError("Milestone not verified yet")
 
-        amount = ms.amount
+        amount = int(ms.amount)
         fee = (amount * u256(self.platform_fee_percent)) / u256(100)
         payout = amount - fee
 
@@ -663,7 +663,7 @@ Respond ONLY as JSON:
         remaining = u256(0)
         for m in escrow.milestones:
             if m.status != "paid":
-                remaining = remaining + m.amount
+                remaining = remaining + u256(int(m.amount))
 
         fee = (remaining * u256(self.platform_fee_percent)) / u256(100)
         payout = remaining - fee
@@ -741,7 +741,7 @@ Respond ONLY as JSON:
         p.total_jobs = p.total_jobs + u256(1)
         if completed:
             p.completed_jobs = p.completed_jobs + u256(1)
-        amt = u256(amount)
+        amt = int(amount)
         if role == "freelancer":
             p.total_earned = p.total_earned + amt
         else:
