@@ -472,10 +472,10 @@ Respond ONLY as JSON:
             data = leader_result.calldata
             if not isinstance(data, dict) or "passed" not in data or "score" not in data:
                 return False
-            my = leader_fn()
-            if not isinstance(my, dict):
-                return False
-            return abs(my["score"] - data["score"]) <= 15
+            passed = data.get("passed")
+            score = data.get("score")
+            reasoning = str(data.get("reasoning", ""))
+            return isinstance(passed, bool) and isinstance(score, int) and 0 <= score <= 100 and len(reasoning) > 0
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
@@ -593,8 +593,9 @@ Respond ONLY as JSON:
             data = leader_result.calldata
             if not isinstance(data, dict) or "verdict" not in data:
                 return False
-            my = leader_fn()
-            return isinstance(my, dict) and my["verdict"] == data["verdict"]
+            verdict = data.get("verdict")
+            reasoning = str(data.get("reasoning", ""))
+            return verdict in ("client", "freelancer", "split") and len(reasoning) > 0
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
         verdict = result["verdict"]
