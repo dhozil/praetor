@@ -495,6 +495,24 @@ export async function getDisputeCounter(): Promise<bigint> {
   return result as bigint;
 }
 
+export async function getDisputeCounterFresh(): Promise<bigint> {
+  const result = await readClient.readContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "get_dispute_counter",
+    args: [],
+  });
+  return result as bigint;
+}
+
+export async function getDisputeFresh(disputeId: bigint): Promise<any> {
+  const result = await readClient.readContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "get_dispute",
+    args: [disputeId],
+  });
+  return result;
+}
+
 export async function isVerified(
   escrowId: bigint,
   milestoneIndex: bigint,

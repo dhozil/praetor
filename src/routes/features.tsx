@@ -49,6 +49,8 @@ import {
   getVerification,
   getDispute,
   getDisputeCounter,
+  getDisputeCounterFresh,
+  getDisputeFresh,
   getEscrowEvents,
   releasePayment,
   openDispute,
@@ -1435,9 +1437,19 @@ function DisputeDemo() {
         if (discEvent) { const m = discEvent.description.match(/#(\d+)/); if (m) { setDisputeId(BigInt(m[1])); found = true; } }
       } catch { /* */ }
       if (!found) {
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const c = await getDisputeCounter();
-          if (c > 0n) { setDisputeId(c - 1n); found = true; break; }
+        for (let attempt = 0; attempt < 10; attempt++) {
+          try {
+            const c = await getDisputeCounterFresh();
+            if (c > 0n) {
+              const id = c - 1n;
+              const d = await getDisputeFresh(id);
+              if (d && d.escrow_id?.toString() === escrowId) {
+                setDisputeId(id);
+                found = true;
+                break;
+              }
+            }
+          } catch { /* */ }
           await new Promise((r) => setTimeout(r, 2000));
         }
       }
