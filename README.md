@@ -72,7 +72,7 @@ When a milestone is rejected (or either party disagrees with the AI result), eit
 
 ## Intelligent Contract
 
-Written in Python using `py-genlayer`. Deployed on **Studionet** at **`0xA1F626F555BdaBFfff5D207e5fC2A4431f23FAe4`**.
+Written in Python using `py-genlayer`. Deployed on **Studionet** at **`0x81dF41D90f9Ca89983910ba6aa48b2a844F8cad6`**.
 
 Deploy:
 ```bash
@@ -163,7 +163,7 @@ pnpm run build        # Production build → dist/
 ### Prerequisites
 - **Rabby Wallet** or **MetaMask** (GenLayer Snap optional for Studio)
 - A wallet funded with GEN on Studionet (use faucet at [studio.genlayer.com](https://studio.genlayer.com))
-- Contract deployed on Studionet at `0xA1F626F555BdaBFfff5D207e5fC2A4431f23FAe4`
+- Contract deployed on Studionet at `0x81dF41D90f9Ca89983910ba6aa48b2a844F8cad6`
 
 ### Deploy to Cloudflare Pages
 ```bash
