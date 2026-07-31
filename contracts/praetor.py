@@ -470,12 +470,15 @@ Respond ONLY as JSON:
             if not isinstance(leader_result, gl.vm.Return):
                 return False
             data = leader_result.calldata
-            if not isinstance(data, dict) or "passed" not in data or "score" not in data:
+            if not isinstance(data, dict) or "score" not in data:
                 return False
-            passed = data.get("passed")
             score = data.get("score")
-            reasoning = str(data.get("reasoning", ""))
-            return isinstance(passed, bool) and isinstance(score, int) and 0 <= score <= 100 and len(reasoning) > 0
+            if not isinstance(score, int) or not (0 <= score <= 100):
+                return False
+            my = leader_fn()
+            if not isinstance(my, dict) or "score" not in my:
+                return False
+            return abs(my["score"] - score) <= 15
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
@@ -575,31 +578,43 @@ CLIENT'S EVIDENCE:{client_ev}
 FREELANCER'S STATEMENT: {freelancer_statement}
 FREELANCER'S EVIDENCE:{freelancer_ev}
 
-Evaluate the submitted work and both arguments. Decide who should receive the funds.
+Evaluate the submitted work and both arguments. Decide how the milestone funds should be split.
 Respond ONLY as JSON:
-{{"verdict": "client"|"freelancer"|"split", "reasoning": "string"}}
+{{"client_share": int 0-100, "reasoning": "string"}}
+- client_share is the percentage of the milestone amount that should go to the CLIENT.
+- 100 = fully the client's money (freelancer gets nothing, refund).
+- 0 = fully the freelancer's money (milestone verified, client pays).
+- ~50 = split evenly.
 """
             res = gl.nondet.exec_prompt(prompt, response_format="json")
             if not isinstance(res, dict):
                 raise gl.UserError("Invalid response")
-            verdict = res.get("verdict", "split")
-            if verdict not in ("client", "freelancer", "split"):
-                verdict = "split"
-            return {"verdict": verdict, "reasoning": str(res.get("reasoning", ""))}
+            share = max(0, min(100, int(res.get("client_share", 50))))
+            return {"client_share": share, "reasoning": str(res.get("reasoning", ""))}
 
         def validator_fn(leader_result) -> bool:
             if not isinstance(leader_result, gl.vm.Return):
                 return False
             data = leader_result.calldata
-            if not isinstance(data, dict) or "verdict" not in data:
+            if not isinstance(data, dict) or "client_share" not in data:
                 return False
-            verdict = data.get("verdict")
-            reasoning = str(data.get("reasoning", ""))
-            return verdict in ("client", "freelancer", "split") and len(reasoning) > 0
+            share = data.get("client_share")
+            if not isinstance(share, int) or not (0 <= share <= 100):
+                return False
+            my = leader_fn()
+            if not isinstance(my, dict) or "client_share" not in my:
+                return False
+            return abs(my["client_share"] - share) <= 20
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
-        verdict = result["verdict"]
-        reasoning = result["reasoning"]
+        share = int(result["client_share"])
+        reasoning = str(result["reasoning"])
+        if share >= 67:
+            verdict = "client"
+        elif share <= 33:
+            verdict = "freelancer"
+        else:
+            verdict = "split"
 
         self.disputes[dispute_id] = Dispute(
             escrow_id=escrow_id,
