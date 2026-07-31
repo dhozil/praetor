@@ -1433,18 +1433,20 @@ function DisputeDemo() {
       const hash = await openDispute(account, BigInt(escrowId), BigInt(milestoneIdx || "0"), clientStmt, [], freelancerStmt, []);
       setTxHash(hash);
       await waitForReceipt(hash);
+      invalidateAllCache();
+      // Find dispute ID from events, else use fresh dispute counter
       const events = await getEscrowEvents(BigInt(escrowId));
       const discEvent = events.find((e: any) => e.description?.includes("Dispute #"));
       if (discEvent) { const m = discEvent.description.match(/#(\d+)/); if (m) setDisputeId(BigInt(m[1])); }
       else { const c = await getDisputeCounter(); if (c > 0n) setDisputeId(c - 1n); }
-      invalidateAllCache();
       setStep("votes");
     } catch (e: any) { setError(e?.shortMessage || e?.message || "Open dispute failed"); }
     finally { setLoading(false); }
   };
 
   const handleCastVote = async () => {
-    if (!disputeId || !account) return;
+    if (!account) { setError("Connect wallet first."); return; }
+    if (!disputeId) { setError("Dispute ID not found. Re-open the dispute or reset."); return; }
     if (!currentVote.vote || !currentVote.reasoning.trim()) { setError("Please add reasoning before voting."); return; }
     setError(""); setLoading(true);
     try {
@@ -1607,7 +1609,7 @@ function DisputeDemo() {
           {step === "votes" && (
             <div className="space-y-4">
               <div className="rounded-xl border border-gold/20 p-4">
-                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft mb-3">Jury votes ({juryVotes.length}/5)</div>
+                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft mb-3">Jury votes ({juryVotes.length}/5){disputeId ? <span className="text-muted-foreground normal-case tracking-normal"> — Dispute #{disputeId.toString()}</span> : null}</div>
                 <div className="flex justify-around mb-4">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="flex flex-col items-center gap-2">
