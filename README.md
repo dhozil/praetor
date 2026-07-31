@@ -72,7 +72,7 @@ When a milestone is rejected, either party can open a dispute. Both submit state
 
 ## Intelligent Contract
 
-Written in Python using `py-genlayer`. Deployed on **Studionet** at **`0xad230a65DB0c45234fd75161a522a03cEdF12FF6`**.
+Written in Python using `py-genlayer`. Deployed on **Studionet** at **`0xFd38de70EDa759994A1e8ffe58081Ad47239602A`**.
 
 Deploy:
 ```bash
@@ -163,7 +163,7 @@ pnpm run build        # Production build → dist/
 ### Prerequisites
 - **Rabby Wallet** or **MetaMask** (GenLayer Snap optional for Studio)
 - A wallet funded with GEN on Studionet (use faucet at [studio.genlayer.com](https://studio.genlayer.com))
-- Contract deployed on Studionet at `0xad230a65DB0c45234fd75161a522a03cEdF12FF6`
+- Contract deployed on Studionet at `0xFd38de70EDa759994A1e8ffe58081Ad47239602A`
 
 ### Deploy to Cloudflare Pages
 ```bash

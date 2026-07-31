@@ -35,5 +35,5 @@ export const FAUCET_URL = ""; // Built-in faucet in Studio account selector
  * Deploy via: genlayer deploy --contract contracts/praetor.py --rpc https://studio.genlayer.com/api --args 2
  */
 export const CONTRACTS = {
-  praetor: "0xad230a65DB0c45234fd75161a522a03cEdF12FF6" as `0x${string}`,
+  praetor: "0xFd38de70EDa759994A1e8ffe58081Ad47239602A" as `0x${string}`,
 } as const;
