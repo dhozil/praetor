@@ -1035,15 +1035,7 @@ function VerifyDemo() {
                   })}
               </select>
             ) : (
-              <div className="flex gap-2">
-                <input
-                  value={escrowId}
-                  onChange={(e) => setEscrowId(e.target.value)}
-                  className="input flex-1 font-mono"
-                  placeholder="Escrow ID (manual)"
-                />
-                <button onClick={() => loadEscrow()} className="btn-ghost-gold rounded-lg px-3 text-xs hover:bg-gold/10">Load</button>
-              </div>
+              <div className="text-xs text-muted-foreground text-center py-2">No assigned jobs with pending milestones. Assign a freelancer first.</div>
             )}
 
             {escrowId && (
