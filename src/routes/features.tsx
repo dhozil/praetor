@@ -1627,11 +1627,12 @@ function DisputeDemo() {
                         <option value="freelancer">Freelancer</option>
                         <option value="split">Split</option>
                       </select>
-                      <input value={currentVote.reasoning} onChange={(e) => setCurrentVote((v) => ({ ...v, reasoning: e.target.value }))} className="input flex-1" placeholder="Reasoning…" />
+                      <textarea value={currentVote.reasoning} onChange={(e) => setCurrentVote((v) => ({ ...v, reasoning: e.target.value }))} className="input flex-1 resize-none" rows={2} placeholder="Reasoning…" />
                     </div>
                     <button onClick={handleCastVote} disabled={loading || !currentVote.reasoning.trim()} className="btn-gold w-full rounded-full py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                       {loading ? "Casting…" : `Cast vote ${juryVotes.length + 1}`}
                     </button>
+                    {!currentVote.reasoning.trim() && <p className="text-[10px] text-muted-foreground text-center">Type your reasoning to enable the vote button.</p>}
                   </div>
                 )}
               </div>
