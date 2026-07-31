@@ -1434,11 +1434,21 @@ function DisputeDemo() {
       setTxHash(hash);
       await waitForReceipt(hash);
       invalidateAllCache();
-      // Find dispute ID from events, else use fresh dispute counter
-      const events = await getEscrowEvents(BigInt(escrowId));
-      const discEvent = events.find((e: any) => e.description?.includes("Dispute #"));
-      if (discEvent) { const m = discEvent.description.match(/#(\d+)/); if (m) setDisputeId(BigInt(m[1])); }
-      else { const c = await getDisputeCounter(); if (c > 0n) setDisputeId(c - 1n); }
+      // Find dispute ID from events, else read fresh dispute counter (with retries)
+      let found = false;
+      try {
+        const events = await getEscrowEvents(BigInt(escrowId));
+        const discEvent = events.find((e: any) => e.description?.includes("Dispute #"));
+        if (discEvent) { const m = discEvent.description.match(/#(\d+)/); if (m) { setDisputeId(BigInt(m[1])); found = true; } }
+      } catch { /* */ }
+      if (!found) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const c = await getDisputeCounter();
+          if (c > 0n) { setDisputeId(c - 1n); found = true; break; }
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      if (!found) setError("Could not find dispute ID — check the explorer for your open_dispute tx.");
       setStep("votes");
     } catch (e: any) { setError(e?.shortMessage || e?.message || "Open dispute failed"); }
     finally { setLoading(false); }
