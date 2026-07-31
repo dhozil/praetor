@@ -865,6 +865,7 @@ function VerifyDemo() {
               const escrow = escrowId !== null ? await getEscrow(escrowId) : null;
               return {
                 jobId: id,
+                escrowId: escrowId,
                 title: job.title,
                 jobDescription: escrow?.job_description || job.description || "",
                 milestones: escrow?.milestones || job.milestone_titles?.map((t: string, i: number) => ({
@@ -1003,7 +1004,7 @@ function VerifyDemo() {
                   const val = e.target.value;
                   setEscrowId(val);
                   if (val) {
-                    const entry = myEscrows.find((x) => x.jobId.toString() === val);
+                    const entry = myEscrows.find((x) => x.escrowId?.toString() === val);
                     if (entry) {
                       setJobDescription(entry.jobDescription || "");
                       setMilestoneIndex("0");
@@ -1024,8 +1025,8 @@ function VerifyDemo() {
                   .map((e) => {
                     const remain = (e.milestones || []).filter((m: any) => m.status !== "verified" && m.status !== "paid").length;
                     return (
-                      <option key={e.jobId.toString()} value={e.jobId.toString()}>
-                        #{e.jobId.toString()} — {e.title} ({remain} pending)
+                      <option key={e.escrowId?.toString()} value={e.escrowId?.toString()}>
+                        Escrow #{e.escrowId?.toString()} — {e.title} ({remain} pending)
                       </option>
                     );
                   })}
@@ -1038,7 +1039,7 @@ function VerifyDemo() {
               <>
                 {/* Milestone picker — only pending/rejected milestones shown */}
                 {(() => {
-                  const entry = myEscrows.find((e) => e.jobId.toString() === escrowId);
+                  const entry = myEscrows.find((e) => e.escrowId?.toString() === escrowId);
                   const avail = entry?.milestones?.filter((m: any) => m.status !== "verified" && m.status !== "paid") || [];
                   return avail.length > 1 ? (
                     <div>
