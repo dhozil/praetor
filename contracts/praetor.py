@@ -657,14 +657,17 @@ Respond ONLY as JSON:
             self._record_dispute_result(str(escrow.client), True)
             self._record_dispute_result(str(escrow.freelancer), False)
         else:  # split
-            half = amount // 2
-            remainder = amount - half
+            pct = int(self.platform_fee_percent)
+            fee = (amount * pct) // 100
+            payout = int(amount - fee)
+            half = payout // 2
+            remainder = payout - half
             _EOA(escrow.client).emit_transfer(value=u256(half))
             _EOA(escrow.freelancer).emit_transfer(value=u256(remainder))
             ms.status = "split"
             escrow.winner = Address("0x0000000000000000000000000000000000000000")
             self._log_event("dispute_resolved", escrow_id,
-                            f"Dispute #{dispute_id}: split — client {half}, freelancer {remainder}")
+                            f"Dispute #{dispute_id}: split — fee {fee}, client {half}, freelancer {remainder}")
             self._record_dispute_result(str(escrow.client), True)
             self._record_dispute_result(str(escrow.freelancer), True)
 

@@ -1593,7 +1593,7 @@ function DisputeDemo() {
                     <p className="text-destructive">Refunded to client — the milestone amount was returned on-chain.</p>
                   )}
                   {resolution.verdict === "split" && (
-                    <p className="text-gold-soft">Funds split between client &amp; freelancer.</p>
+                    <p className="text-gold-soft">Funds split between client &amp; freelancer after the platform fee.</p>
                   )}
                   {resolution.verdict === "" && (
                     <p className="text-muted-foreground">The verdict is stored on-chain. It may still be finalizing — check the tx in the explorer, then refresh.</p>
