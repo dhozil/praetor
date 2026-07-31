@@ -605,7 +605,7 @@ export async function getTotalEvents(): Promise<bigint> {
 
 export async function waitForReceipt(
   txHash: string,
-  status: TransactionStatus = TransactionStatus.ACCEPTED,
+  status: TransactionStatus = TransactionStatus.FINALIZED,
 ) {
   const receipt = await readClient.waitForTransactionReceipt({
     hash: txHash as any,
