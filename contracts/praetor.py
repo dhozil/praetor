@@ -4,6 +4,16 @@ from genlayer import *
 from dataclasses import dataclass
 
 
+# EVM contract interface for sending value to EOAs / chain-layer accounts
+@gl.evm.contract_interface
+class _EOA:
+    class View:
+        pass
+
+    class Write:
+        pass
+
+
 @allow_storage
 @dataclass
 class Milestone:
@@ -385,7 +395,7 @@ class PraetorV2(gl.Contract):
         ms.status = "paid"
         escrow.milestones[idx] = ms
 
-        freelancer = gl.get_contract_at(escrow.freelancer)
+        freelancer = _EOA(Address(escrow.freelancer))
         freelancer.emit_transfer(value=u256(payout))
 
         all_paid = True
@@ -686,10 +696,8 @@ Respond ONLY as JSON:
         else:  # split
             half = int(payout) // 2
             remainder = int(payout) - half
-            client_recv = gl.get_contract_at(escrow.client)
-            client_recv.emit_transfer(value=u256(half))
-            freelancer_recv = gl.get_contract_at(escrow.freelancer)
-            freelancer_recv.emit_transfer(value=u256(remainder))
+            _EOA(Address(escrow.client)).emit_transfer(value=u256(half))
+            _EOA(Address(escrow.freelancer)).emit_transfer(value=u256(remainder))
             escrow.winner = Address("0x0000000000000000000000000000000000000000")
             escrow.status = "completed"
             self._log_event("dispute_executed", dispute.escrow_id,
@@ -700,8 +708,7 @@ Respond ONLY as JSON:
             self.escrows[dispute.escrow_id] = escrow
             return
 
-        recv_contract = gl.get_contract_at(recipient)
-        recv_contract.emit_transfer(value=u256(payout))
+        _EOA(Address(recipient)).emit_transfer(value=u256(payout))
         self.escrows[dispute.escrow_id] = escrow
         self._record_dispute_result(str(recipient), True)
         other = str(escrow.freelancer) if verdict == "client" else str(escrow.client)
@@ -771,12 +778,12 @@ Respond ONLY as JSON:
     def _calc_score(self, p: ReputationProfile) -> int:
         if p.total_jobs == u256(0):
             return u256(50)
-        completion = (p.completed_jobs * u256(100)) / p.total_jobs
-        score = u256(50) + (completion / u256(2))
+        completion = (int(p.completed_jobs) * 100) // int(p.total_jobs)
+        score = 50 + (completion // 2)
         if p.disputed_jobs > u256(0):
-            wins = (p.won_disputes * u256(100)) / p.disputed_jobs
-            score = score + (wins / u256(4))
-        return score if score <= u256(100) else u256(100)
+            wins = (int(p.won_disputes) * 100) // int(p.disputed_jobs)
+            score = score + (wins // 4)
+        return score if score <= 100 else 100
 
     # ── Audit Trail Methods ─────────────────────────────────────────────────
 
