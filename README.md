@@ -12,10 +12,10 @@ No more he-said-she-said. No more escrow agents taking weeks. The code judges.
 ## Use Cases
 
 ### 🏗️ Freelance Development
-A client posts a job ("Build a DeFi dashboard") with milestones and locked funds. A freelancer applies, gets assigned, and submits evidence for each milestone (GitHub PR, deployment URL, test results). GenLayer validators independently review the evidence via LLM consensus. If the work passes, funds are released automatically.
+A client posts a job ("Build a DeFi dashboard") with milestones and locked funds. A freelancer applies, gets assigned, and submits evidence for each milestone (GitHub PR, deployment URL, test results). GenLayer validators independently review the evidence via LLM consensus. If the work passes, the client releases the payment on-chain.
 
 ### 🔐 Intelligent Contract Audits
-An auditor completes a security review and submits the report as evidence. The AI verifies the report covers the agreed scope before payment is released. If the client disputes the audit quality, both parties submit statements and an AI jury decides the verdict.
+An auditor completes a security review and submits the report as evidence. The AI verifies the report covers the agreed scope before payment is released. If the client disputes the audit quality, both parties submit statements and AI consensus decides the verdict.
 
 ### 🎨 Creative & Design Work
 A designer delivers mockups, Figma links, or assets. The AI checks whether the deliverables match the milestone description — resolution, format, file count, visual consistency — and approves or rejects accordingly.
@@ -24,7 +24,7 @@ A designer delivers mockups, Figma links, or assets. The AI checks whether the d
 Writers submit published articles or translation proofs. The AI validates word count, topic relevance, and formatting requirements against the milestone criteria before signaling completion.
 
 ### ⚖️ Dispute Resolution
-When a milestone is rejected, either party can open a dispute. Both submit statements and evidence. Five GenLayer validators act as jurors, each casting an independent AI-reasoned vote. A final AI consensus aggregates the votes into a binding verdict — **client wins**, **freelancer wins**, or **split**.
+When a milestone is rejected (or either party disagrees with the AI result), either party can open a dispute. Both submit statements and evidence. GenLayer AI validators **directly evaluate the submitted work + both parties' statements + evidence** via web-fetched content, then reach consensus on a binding verdict — **client wins**, **freelancer wins**, or **split**. Funds are released to the winner on-chain.
 
 ---
 
@@ -46,7 +46,7 @@ When a milestone is rejected, either party can open a dispute. Both submit state
 │  │  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │   │
 │  │  │Marketplace│  │  Escrow  │  │   AI Verify   │  │   │
 │  │  │ post/apply│  │  release │  │ LLM consensus │  │   │
-│  │  │ assign    │  │  dispute │  │  jury (5)     │  │   │
+│  │  │ assign    │  │  dispute │  │  web fetch    │  │   │
 │  │  └──────────┘  └──────────┘  └───────────────┘  │   │
 │  │  ┌──────────────┐  ┌────────────────────────┐    │   │
 │  │  │  Reputation  │  │     Audit Trail        │    │   │
@@ -62,7 +62,7 @@ When a milestone is rejected, either party can open a dispute. Both submit state
 |---|---|
 | **AI verifies, not humans** | Every milestone is checked by GenLayer's `gl.nondet.exec_prompt` across multiple validators. Evidence URLs are actually fetched via `gl.nondet.web.get()` — validators read the real content. |
 | **Funds locked at post time** | The client deposits the full milestone amount when posting. The contract holds it until AI verification or dispute resolution. |
-| **5-jury AI dispute** | Disputes are resolved by 5 independent LLM validators. The AI leader proposes a verdict; validators must agree within tolerance. |
+| **AI-direct dispute** | Disputes are resolved directly by AI consensus: the contract fetches the submitted work + both statements + evidence, validators reason independently and must agree on the verdict. |
 | **Same-origin RPC proxy** | All contract reads go through `/api/rpc` proxy (Cloudflare Pages worker) — bypasses CORS restrictions from Studio API. |
 | **Per-call localStorage cache** | Read results cached for 2 minutes — reduces RPC calls, no global rate limiter. Cache invalidated on every successful write. |
 | **Auto-polling** | Marketplace and Dashboard refresh every 15 seconds — cross-device updates appear automatically. |
@@ -146,7 +146,7 @@ genlayer deploy --contract contracts/praetor.py --rpc https://studio.genlayer.co
 | **Dashboard** | Role toggle (client/freelancer). See your jobs, escrows, applicants, milestones. Assign freelancer directly. Auto-refresh every 15s. |
 | **AI Verify** | Pick an escrow + milestone. Attach evidence (GitHub, Live URL, Figma, Docs). Submit evidence on-chain. See AI consensus step-by-step: leader fetches URLs → validators verify → result. |
 | **Release** | Select escrow + milestone. Client releases payment. Auto-records reputation for both parties. |
-| **Dispute** | End-to-end flow: Open dispute → cast 5 juror votes → AI resolution → execute verdict (funds released on-chain, dispute result recorded). Built-in random fill examples. |
+| **Dispute** | End-to-end flow: Open dispute → AI resolution (fetches work + evidence) → execute verdict (funds released on-chain, dispute result recorded). Built-in random fill examples. |
 | **History** | Completed jobs grouped by role. Milestone breakdown, escrow status, verification results. |
 | **Reputation** | Register profile (name + role). Auto-displays your stats on connect: score, jobs posted/worked, disputes won, earnings. Look up any wallet. |
 

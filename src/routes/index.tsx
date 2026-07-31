@@ -130,7 +130,7 @@ function Hero() {
         </h1>
 
         <p className="mx-auto mt-8 max-w-2xl animate-fade-up text-lg text-muted-foreground md:text-xl" style={{ animationDelay: "0.25s" }}>
-          AI-powered escrow built on GenLayer Intelligent Contracts. Milestones verified by evidence. Payments released automatically. Disputes judged fairly.
+          AI-powered escrow built on GenLayer Intelligent Contracts. Milestones verified by real evidence. Client releases payment. Disputes judged fairly.
         </p>
 
         <div className="mt-10 flex animate-fade-up flex-wrap items-center justify-center gap-4" style={{ animationDelay: "0.4s" }}>
@@ -161,7 +161,7 @@ function Hero() {
 }
 
 function Marquee() {
-  const items = ["GITHUB", "LIVE WEBSITE", "FIGMA", "DOCUMENTATION", "DEMO VIDEO", "SCREENSHOTS", "IPFS PROOF", "ON-CHAIN LOG"];
+  const items = ["GITHUB", "LIVE URL", "FIGMA", "DOCUMENTATION"];
   return (
     <section className="relative py-12">
       <div className="hairline mx-auto max-w-6xl" />
@@ -176,9 +176,9 @@ function Marquee() {
 
 const featureList = [
   { icon: ShieldCheck, title: "AI Escrow", desc: "Funds are locked in an Intelligent Contract the moment the job begins." },
-  { icon: FileSearch, title: "Milestone Verification", desc: "AI inspects repos, deployments, Figma, docs and demos against requirements." },
-  { icon: Coins, title: "Automatic Payment Release", desc: "Once evidence passes, the contract releases the payment instantly." },
-  { icon: Scale, title: "Dispute Resolution", desc: "GenLayer validators evaluate both sides using natural-language reasoning." },
+  { icon: FileSearch, title: "Milestone Verification", desc: "AI fetches and inspects GitHub, live URLs, Figma and docs against the requirements." },
+  { icon: Coins, title: "Client-Controlled Release", desc: "Once evidence passes AI consensus, the client releases the milestone payment on-chain." },
+  { icon: Scale, title: "Dispute Resolution", desc: "GenLayer validators fetch the submitted work + both arguments and reason to a binding verdict." },
   { icon: Star, title: "Reputation Score", desc: "Every completed milestone builds a portable, on-chain reputation." },
   { icon: Lock, title: "Audit Trail", desc: "Every decision, hash and payout is permanently recorded on-chain." },
 ];
@@ -217,7 +217,7 @@ const steps = [
   { n: "II", title: "Freelancer accepts", desc: "The freelancer reviews the terms and locks in the engagement on-chain.", icon: ShieldCheck },
   { n: "III", title: "Evidence is submitted", desc: "Links to GitHub, Figma, live URL, docs, demo video or screenshots are attached.", icon: FileSearch },
   { n: "IV", title: "AI evaluates", desc: "GenLayer validators reason about the requirements against the delivered evidence.", icon: Cpu },
-  { n: "V", title: "Payment or dispute", desc: "If passed, funds release automatically. If disputed, the contract judges both sides.", icon: Scale },
+  { n: "V", title: "Payment or dispute", desc: "If passed, the client releases payment. If disputed, the contract judges both sides.", icon: Scale },
 ];
 
 function HowItWorks() {
@@ -255,7 +255,7 @@ function Security() {
   const pillars = [
     { icon: Lock, title: "Non-custodial by design", desc: "Funds live inside the Intelligent Contract. Praetor never holds your assets." },
     { icon: Sparkles, title: "Verifiable AI reasoning", desc: "Every AI judgment is signed by validators and recorded immutably." },
-    { icon: FileSearch, title: "IPFS evidence", desc: "Deliverables are pinned to IPFS — tamper-evident, permanently referenceable." },
+    { icon: FileSearch, title: "Web evidence", desc: "Validators fetch the actual content at submitted URLs (GitHub, Figma, docs, live sites) and reason over the real work." },
     { icon: Wallet, title: "Wallet-native login", desc: "Connect MetaMask, Rabby, Coinbase Wallet, Rainbow, Trust — any EVM wallet via EIP-6963." },
   ];
   return (
@@ -301,9 +301,9 @@ function Reputation() {
         <SectionHeader eyebrow="Reputation" title="Honor, quantified." subtitle="Every milestone verified by Praetor mints a permanent mark on your on-chain reputation." />
         <div className="mt-16 grid gap-8 md:grid-cols-3">
           {[
-            { name: "Marcus A.", role: "Full-stack Engineer", score: 987 },
-            { name: "Livia S.", role: "Product Designer", score: 942 },
-            { name: "Cassius R.", role: "Smart Contract Dev", score: 998 },
+            { name: "Marcus A.", role: "Full-stack Engineer", score: 97 },
+            { name: "Livia S.", role: "Product Designer", score: 94 },
+            { name: "Cassius R.", role: "Smart Contract Dev", score: 99 },
           ].map((u) => (
             <div key={u.name} className="glass-card relative rounded-2xl p-8">
               <div className="flex items-center justify-between">
@@ -320,12 +320,12 @@ function Reputation() {
               </div>
 
               <div className="mt-8">
-                <div className="font-display text-5xl text-gold-gradient">{u.score}</div>
+                <div className="font-display text-5xl text-gold-gradient">{u.score}<span className="text-2xl text-muted-foreground">/100</span></div>
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Praetor Score</div>
               </div>
 
               <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-white/5">
-                <div className="h-full rounded-full bg-gradient-to-r from-gold-soft to-gold" style={{ width: `${(u.score / 1000) * 100}%` }} />
+                <div className="h-full rounded-full bg-gradient-to-r from-gold-soft to-gold" style={{ width: `${u.score}%` }} />
               </div>
 
               <div className="mt-6 grid grid-cols-3 gap-2 text-center text-xs text-muted-foreground">

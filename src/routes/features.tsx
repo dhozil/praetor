@@ -1517,8 +1517,8 @@ function DisputeDemo() {
 
   return (
     <DemoShell
-      title="Dispute resolution by AI jury"
-      subtitle="5 validators vote, AI renders final verdict, funds released to winner."
+      title="Dispute resolution by AI consensus"
+      subtitle="AI fetches the submitted work + both statements, then renders a binding verdict."
       left={
         <div className="space-y-4">
           <div className="flex justify-between text-[10px] uppercase tracking-wider">
@@ -1612,7 +1612,7 @@ function DisputeDemo() {
             <div className="space-y-4">
               <div className="rounded-xl border border-gold/20 p-4 text-center space-y-3">
                 <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">AI resolution</div>
-                <p className="text-sm text-muted-foreground">All 5 votes cast. The AI model analyzes statements, evidence, and votes to render a binding verdict.</p>
+                <p className="text-sm text-muted-foreground">AI fetches the submitted work + evidence, then validators independently reason to reach a binding verdict.</p>
                 <button onClick={handleResolve} disabled={loading} className="btn-gold rounded-full px-8 py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                   {loading ? "AI resolving…" : "Resolve with AI"}
                 </button>
