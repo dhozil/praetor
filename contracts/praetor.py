@@ -151,7 +151,7 @@ class PraetorV2(gl.Contract):
     def __init__(self, platform_fee_percent: int):
         self.job_counter = u256(0)
         self.escrow_counter = u256(0)
-        self.platform_fee_percent = platform_fee_percent
+        self.platform_fee_percent = int(platform_fee_percent)
         self.dispute_counter = u256(0)
         self.num_jurors = u8(5)
         self.event_counter = u256(0)
@@ -378,14 +378,15 @@ class PraetorV2(gl.Contract):
             raise gl.vm.UserError("Milestone not verified yet")
 
         amount = int(ms.amount)
-        fee = (amount * u256(self.platform_fee_percent)) / u256(100)
-        payout = amount - fee
+        pct = int(self.platform_fee_percent)
+        fee = (amount * pct) // 100
+        payout = int(amount - fee)
 
         ms.status = "paid"
         escrow.milestones[idx] = ms
 
         freelancer = gl.get_contract_at(escrow.freelancer)
-        freelancer.emit_transfer(value=payout)
+        freelancer.emit_transfer(value=u256(payout))
 
         all_paid = True
         for m in escrow.milestones:
@@ -665,8 +666,9 @@ Respond ONLY as JSON:
             if m.status != "paid":
                 remaining = remaining + u256(int(m.amount))
 
-        fee = (remaining * u256(self.platform_fee_percent)) / u256(100)
-        payout = remaining - fee
+        pct = int(self.platform_fee_percent)
+        fee = (int(remaining) * pct) // 100
+        payout = int(remaining) - fee
 
         verdict = dispute.verdict
         if verdict == "client":
@@ -682,12 +684,12 @@ Respond ONLY as JSON:
             self._log_event("dispute_executed", dispute.escrow_id,
                             f"Verdict: freelancer — paid {payout} wei")
         else:  # split
-            half = payout / u256(2)
-            remainder = payout - half
+            half = int(payout) // 2
+            remainder = int(payout) - half
             client_recv = gl.get_contract_at(escrow.client)
-            client_recv.emit_transfer(value=half)
+            client_recv.emit_transfer(value=u256(half))
             freelancer_recv = gl.get_contract_at(escrow.freelancer)
-            freelancer_recv.emit_transfer(value=remainder)
+            freelancer_recv.emit_transfer(value=u256(remainder))
             escrow.winner = Address("0x0000000000000000000000000000000000000000")
             escrow.status = "completed"
             self._log_event("dispute_executed", dispute.escrow_id,
@@ -699,7 +701,7 @@ Respond ONLY as JSON:
             return
 
         recv_contract = gl.get_contract_at(recipient)
-        recv_contract.emit_transfer(value=payout)
+        recv_contract.emit_transfer(value=u256(payout))
         self.escrows[dispute.escrow_id] = escrow
         self._record_dispute_result(str(recipient), True)
         other = str(escrow.freelancer) if verdict == "client" else str(escrow.client)
@@ -737,6 +739,8 @@ Respond ONLY as JSON:
     @gl.public.write
     def record_job(self, user_address: str, role: str, amount: int, completed: bool):
         user = Address(user_address)
+        if user not in self.profiles:
+            return
         p = self.profiles[user]
         p.total_jobs = p.total_jobs + u256(1)
         if completed:
