@@ -1445,7 +1445,7 @@ function DisputeDemo() {
 
   const handleCastVote = async () => {
     if (!disputeId || !account) return;
-    if (!currentVote.vote || !currentVote.reasoning.trim()) return;
+    if (!currentVote.vote || !currentVote.reasoning.trim()) { setError("Please add reasoning before voting."); return; }
     setError(""); setLoading(true);
     try {
       const hash = await castJurorVote(account, disputeId, currentVote.vote, currentVote.reasoning);
@@ -1629,10 +1629,10 @@ function DisputeDemo() {
                       </select>
                       <textarea value={currentVote.reasoning} onChange={(e) => setCurrentVote((v) => ({ ...v, reasoning: e.target.value }))} className="input flex-1 resize-none" rows={2} placeholder="Reasoning…" />
                     </div>
-                    <button onClick={handleCastVote} disabled={loading || !currentVote.reasoning.trim()} className="btn-gold w-full rounded-full py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button onClick={handleCastVote} disabled={loading} className="btn-gold w-full rounded-full py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                       {loading ? "Casting…" : `Cast vote ${juryVotes.length + 1}`}
                     </button>
-                    {!currentVote.reasoning.trim() && <p className="text-[10px] text-muted-foreground text-center">Type your reasoning to enable the vote button.</p>}
+                    {!currentVote.reasoning.trim() && <p className="text-[10px] text-muted-foreground text-center">Add your reasoning before voting.</p>}
                   </div>
                 )}
               </div>
