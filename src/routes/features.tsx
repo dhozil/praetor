@@ -47,21 +47,14 @@ import {
   getEscrowByJob,
   verifyMilestone,
   getVerification,
-  getDispute,
-  getDisputeCounter,
-  getDisputeCounterFresh,
+  getDisputeByEscrowFresh,
   getDisputeFresh,
-  getEscrowEvents,
   releasePayment,
-  openDispute,
-  castJurorVote,
   resolveDispute,
-  executeDisputeVerdict,
   waitForReceipt,
   submitEvidence,
   registerUser,
   recordJob,
-  recordDisputeResult,
   getProfile,
   getPraetorScore,
 } from "@/lib/genlayer-client";
@@ -1355,12 +1348,14 @@ function ReleaseDemo() {
 function DisputeDemo() {
   const { account, connected } = useWallet();
 
-  const [step, setStep] = useState<"open" | "votes" | "resolve" | "execute" | "done">("open");
+  const [step, setStep] = useState<"form" | "resolving" | "done">("form");
 
   const [escrowId, setEscrowId] = useState("");
   const [milestoneIdx, setMilestoneIdx] = useState("");
   const [clientStmt, setClientStmt] = useState("");
   const [freelancerStmt, setFreelancerStmt] = useState("");
+  const [clientEvidence, setClientEvidence] = useState("");
+  const [freelancerEvidence, setFreelancerEvidence] = useState("");
   const [clientAddr, setClientAddr] = useState("");
   const [freelancerAddr, setFreelancerAddr] = useState("");
   // Composite key "escrowId:milestoneIdx" for dropdown value
@@ -1398,6 +1393,8 @@ function DisputeDemo() {
     })();
   }, [account]);
 
+  const [disputeVerification, setDisputeVerification] = useState<any>(null);
+
   const selectDisputeEscrow = (escrow: any, msIdx: number) => {
     setEscrowId(escrow.escrowId.toString());
     setMilestoneIdx(msIdx.toString());
@@ -1406,154 +1403,68 @@ function DisputeDemo() {
     getVerification(escrow.escrowId, BigInt(msIdx)).then(setDisputeVerification).catch(() => setDisputeVerification(null));
   };
 
-  const canOpen = escrowId.trim().length > 0 && clientStmt.trim().length > 0 && freelancerStmt.trim().length > 0 && connected;
-
-  const [disputeId, setDisputeId] = useState<bigint | null>(null);
-  const [manualDisputeId, setManualDisputeId] = useState("");
-  const [txHash, setTxHash] = useState("");
-  const [disputeVerification, setDisputeVerification] = useState<any>(null);
-
-  const [juryVotes, setJuryVotes] = useState<{ vote: string; reasoning: string }[]>([]);
-  const [currentVote, setCurrentVote] = useState<{ vote: string; reasoning: string }>({ vote: "client", reasoning: "" });
+  const canResolve = escrowId.trim().length > 0 && clientStmt.trim().length > 0 && freelancerStmt.trim().length > 0 && connected;
 
   const [resolution, setResolution] = useState<any>(null);
-  const [execution, setExecution] = useState<any>(null);
+  const [txHash, setTxHash] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [debugInfo, setDebugInfo] = useState("");
 
-  const handleOpen = async () => {
-    if (!canOpen || !account) return;
-    setError(""); setLoading(true); setDebugInfo("");
+  const handleResolve = async () => {
+    if (!canResolve || !account) return;
+    setError(""); setLoading(true);
     try {
-      const hash = await openDispute(account, BigInt(escrowId), BigInt(milestoneIdx || "0"), clientStmt, [], freelancerStmt, []);
+      const hash = await resolveDispute(
+        account,
+        BigInt(escrowId),
+        BigInt(milestoneIdx || "0"),
+        clientStmt,
+        clientEvidence.trim() ? [clientEvidence.trim()] : [],
+        freelancerStmt,
+        freelancerEvidence.trim() ? [freelancerEvidence.trim()] : [],
+      );
       setTxHash(hash);
       await waitForReceipt(hash);
       invalidateAllCache();
-      setDebugInfo("tx OK, escrowId=" + escrowId);
-      // Find dispute ID from events, else read fresh dispute counter (with retries)
-      let found = false;
-      try {
-        const events = await getEscrowEvents(BigInt(escrowId));
-        setDebugInfo("events=" + (events?.length ?? 0));
-        const discEvent = events.find((e: any) => e.description?.includes("Dispute #"));
-        if (discEvent) { const m = discEvent.description.match(/#(\d+)/); if (m) { setDisputeId(BigInt(m[1])); found = true; setDebugInfo("found via event Dispute #" + m[1]); } }
-      } catch (e: any) { setDebugInfo("events ERR: " + (e?.message || e)); }
-      if (!found) {
-        for (let attempt = 0; attempt < 10; attempt++) {
-          try {
-            const c = await getDisputeCounterFresh();
-            setDebugInfo("counter=" + c.toString());
-            if (c > 0n) {
-              for (let i = Number(c) - 1; i >= 0; i--) {
-                const d = await getDisputeFresh(BigInt(i));
-                if (d && d.escrow_id?.toString() === escrowId) {
-                  setDisputeId(BigInt(i));
-                  found = true;
-                  setDebugInfo("found dispute #" + i);
-                  break;
-                }
-              }
-              if (found) break;
-            }
-          } catch (e: any) { setDebugInfo("counter ERR: " + (e?.message || e)); }
-          await new Promise((r) => setTimeout(r, 2000));
-        }
+
+      // Read the stored verdict — no manual dispute ID needed
+      let d: any = null;
+      for (let attempt = 0; attempt < 10 && !d; attempt++) {
+        try {
+          const did = await getDisputeByEscrowFresh(BigInt(escrowId));
+          if (did !== null) d = await getDisputeFresh(did);
+        } catch { /* retry */ }
+        if (!d) await new Promise((r) => setTimeout(r, 2000));
       }
-      if (!found) setError("Could not find dispute ID — check the explorer for your open_dispute tx.");
-      setStep("resolve");
-    } catch (e: any) { setError(e?.shortMessage || e?.message || "Open dispute failed"); }
-    finally { setLoading(false); }
-  };
-
-  const handleCastVote = async () => {
-    if (!account) { setError("Connect wallet first."); return; }
-    if (!disputeId) { setError("Dispute ID not found. Re-open the dispute or reset."); return; }
-    if (!currentVote.vote || !currentVote.reasoning.trim()) { setError("Please add reasoning before voting."); return; }
-    setError(""); setLoading(true);
-    try {
-      const hash = await castJurorVote(account, disputeId, currentVote.vote, currentVote.reasoning);
-      await waitForReceipt(hash);
-      setJuryVotes((v) => [...v, { vote: currentVote.vote, reasoning: currentVote.reasoning }]);
-      setCurrentVote({ vote: "client", reasoning: "" });
-      if (juryVotes.length + 1 >= 5) setStep("resolve");
-      invalidateAllCache();
-    } catch (e: any) { setError(e?.shortMessage || e?.message || "Cast vote failed"); }
-    finally { setLoading(false); }
-  };
-
-  const handleResolve = async () => {
-    let did = disputeId;
-    if (!did && manualDisputeId.trim()) did = BigInt(manualDisputeId.trim());
-    if (!did) { setError("Dispute ID not found. Enter it manually below or re-open the dispute."); return; }
-    setError(""); setLoading(true);
-    try {
-      const hash = await resolveDispute(account!, did);
-      await waitForReceipt(hash);
-      const d = await getDispute(did);
-      setResolution(d);
-      setStep("execute");
-      invalidateAllCache();
+      setResolution(d || { verdict: "unknown", reasoning: "Verdict stored on-chain. Refresh to view." });
+      setStep("done");
     } catch (e: any) { setError(e?.shortMessage || e?.message || "Resolve failed"); }
     finally { setLoading(false); }
   };
 
-  const handleExecute = async () => {
-    if (!disputeId || !account) return;
-    setError(""); setLoading(true);
-    try {
-      const hash = await executeDisputeVerdict(account, disputeId);
-      await waitForReceipt(hash);
-      const escrow = await getEscrow(BigInt(escrowId));
-      setExecution(escrow);
-      setStep("done");
-      invalidateAllCache();
-      // Record dispute result for winner (silent if not registered)
-      if (escrow?.winner && escrow.winner !== "0x0000000000000000000000000000000000000000") {
-        const loser = escrow.winner.toLowerCase() === (escrow.client || "").toLowerCase()
-          ? escrow.freelancer : escrow.client;
-        await recordDisputeResult(account!, escrow.winner, true).catch(() => {});
-        if (loser) await recordDisputeResult(account!, loser, false).catch(() => {});
-      }
-    } catch (e: any) { setError(e?.shortMessage || e?.message || "Execute failed"); }
-    finally { setLoading(false); }
-  };
-
   const reset = () => {
-    setStep("open"); setEscrowId(""); setMilestoneIdx(""); setClientStmt(""); setFreelancerStmt(""); setClientAddr(""); setFreelancerAddr("");
-    setDisputeId(null); setManualDisputeId(""); setTxHash(""); setJuryVotes([]); setDisputeVerification(null);
-    setCurrentVote({ vote: "client", reasoning: "" });
-    setResolution(null); setExecution(null); setError("");
+    setStep("form"); setEscrowId(""); setMilestoneIdx(""); setClientStmt(""); setFreelancerStmt("");
+    setClientEvidence(""); setFreelancerEvidence(""); setClientAddr(""); setFreelancerAddr("");
+    setTxHash(""); setDisputeVerification(null);
+    setResolution(null); setError("");
   };
 
   const examples = [
-    { escrowId: "0", milestoneIdx: "0", client: "The freelancer delivered the DeFi dashboard a week late and the wallet connect feature doesn't work with Ledger. I paid 0.6 GEN upfront and expected a working product. He refuses to fix the bugs unless I pay more.", freelancer: "I completed all 4 milestones on time. The client kept adding extra features mid-project and now blames me for scope creep. The Ledger issue is a known browser limitation, not a bug. I offered to fix it for an additional 0.1 GEN since it was out of scope." },
-    { escrowId: "1", milestoneIdx: "2", client: "I hired him for a smart contract audit. The report only found 2 issues when we later discovered 7 critical vulnerabilities. The audit was incomplete and I had to pay another auditor 0.5 GEN to redo the work. He refuses a refund.", freelancer: "The contract was 95% complete when I received it. I explicitly stated my audit scope was limited to the Solidity code provided. The client later added new modules that I never reviewed. My report clearly stated the scope limitations." },
-    { escrowId: "2", milestoneIdx: "1", client: "He built an NFT minting page but the gas estimation is completely wrong — users overpay by 3x on every mint. I asked for a fix 2 weeks ago and he keeps saying 'next week'. I want the milestone payment of 0.2 GEN returned.", freelancer: "I provided a working gas estimation module. The client deployed it with a different provider configuration that broke the estimates. I've offered 3 times to fix the configuration but the client won't share their deployment setup for debugging." },
-    { escrowId: "3", milestoneIdx: "0", client: "The AI chatbot integration was supposed to support GPT-4 but the delivered version only uses GPT-3.5. The response quality is noticeably worse and users are complaining. I paid 0.8 GEN for premium integration.", freelancer: "The project specification said 'LLM API integration' without specifying the model tier. GPT-4 costs 20x more per token. I built the integration to use whatever model the API key has access to. The client uses a free-tier key that only allows GPT-3.5." },
-    { escrowId: "4", milestoneIdx: "3", client: "The DAO governance dApp has a critical bug: proposal votes aren't counted correctly when quorum is reached on the last day. We lost a $10k treasury vote because of this. The freelancer blames the testing environment.", freelancer: "I delivered the code with full test coverage and a working demo on the testnet. The client modified the voting parameters after deployment without updating the quorum calculation. I can provide git history showing the client's changes broke the logic." },
+    { client: "The freelancer delivered the DeFi dashboard a week late and the wallet connect feature doesn't work with Ledger. I paid 0.6 GEN upfront and expected a working product. He refuses to fix the bugs unless I pay more.", freelancer: "I completed all 4 milestones on time. The client kept adding extra features mid-project and now blames me for scope creep. The Ledger issue is a known browser limitation, not a bug. I offered to fix it for an additional 0.1 GEN since it was out of scope." },
+    { client: "I hired him for a smart contract audit. The report only found 2 issues when we later discovered 7 critical vulnerabilities. The audit was incomplete and I had to pay another auditor 0.5 GEN to redo the work. He refuses a refund.", freelancer: "The contract was 95% complete when I received it. I explicitly stated my audit scope was limited to the Solidity code provided. The client later added new modules that I never reviewed. My report clearly stated the scope limitations." },
+    { client: "He built an NFT minting page but the gas estimation is completely wrong — users overpay by 3x on every mint. I asked for a fix 2 weeks ago and he keeps saying 'next week'. I want the milestone payment of 0.2 GEN returned.", freelancer: "I provided a working gas estimation module. The client deployed it with a different provider configuration that broke the estimates. I've offered 3 times to fix the configuration but the client won't share their deployment setup for debugging." },
+    { client: "The AI chatbot integration was supposed to support GPT-4 but the delivered version only uses GPT-3.5. The response quality is noticeably worse and users are complaining. I paid 0.8 GEN for premium integration.", freelancer: "The project specification said 'LLM API integration' without specifying the model tier. GPT-4 costs 20x more per token. I built the integration to use whatever model the API key has access to. The client uses a free-tier key that only allows GPT-3.5." },
+    { client: "The DAO governance dApp has a critical bug: proposal votes aren't counted correctly when quorum is reached on the last day. We lost a $10k treasury vote because of this. The freelancer blames the testing environment.", freelancer: "I delivered the code with full test coverage and a working demo on the testnet. The client modified the voting parameters after deployment without updating the quorum calculation. I can provide git history showing the client's changes broke the logic." },
   ];
-
-  const stepLabels = ["1. Open", "2. AI Resolve", "3. Execute", "Done"];
-  const stepIndex = ["open", "resolve", "execute", "done"].indexOf(step);
 
   return (
     <DemoShell
       title="Dispute resolution by AI consensus"
-      subtitle="AI fetches the submitted work + both statements, then renders a binding verdict."
+      subtitle="One step: AI fetches both sources &amp; reasons, renders a binding verdict, and applies it on-chain."
       left={
         <div className="space-y-4">
-          <div className="flex justify-between text-[10px] uppercase tracking-wider">
-            {stepLabels.map((label, i) => (
-              <div key={i} className={`flex items-center gap-1 ${i <= stepIndex ? "text-gold-soft" : "text-muted-foreground/40"}`}>
-                <div className={`w-5 h-5 rounded-full grid place-items-center text-[9px] font-mono ${i <= stepIndex ? "bg-gold/20 text-gold-soft" : "bg-gold/5 text-muted-foreground/40"}`}>{i + 1}</div>
-                <span className="hidden sm:inline">{label}</span>
-              </div>
-            ))}
-          </div>
-
-          {step === "open" && (
+          {step === "form" && (
             <div className="space-y-4">
               {/* Escrow & milestone picker */}
               <div className="rounded-xl border border-gold/20 p-4 space-y-3">
@@ -1613,75 +1524,60 @@ function DisputeDemo() {
                 </div>
               )}
 
-              {/* Statements */}
+              {/* Statements + evidence */}
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Client's statement">
-                  <textarea value={clientStmt} onChange={(e) => setClientStmt(e.target.value)} rows={4} placeholder="Explain the client's position…" className="input resize-none" />
-                </Field>
-                <Field label="Freelancer's statement">
-                  <textarea value={freelancerStmt} onChange={(e) => setFreelancerStmt(e.target.value)} rows={4} placeholder="Explain the freelancer's position…" className="input resize-none" />
-                </Field>
+                <div className="space-y-2">
+                  <Field label="Client's statement">
+                    <textarea value={clientStmt} onChange={(e) => setClientStmt(e.target.value)} rows={4} placeholder="Explain the client's position…" className="input resize-none" />
+                  </Field>
+                  <Field label="Client's evidence URL (optional)">
+                    <input value={clientEvidence} onChange={(e) => setClientEvidence(e.target.value)} className="input font-mono text-xs" placeholder="https://…" />
+                  </Field>
+                </div>
+                <div className="space-y-2">
+                  <Field label="Freelancer's statement">
+                    <textarea value={freelancerStmt} onChange={(e) => setFreelancerStmt(e.target.value)} rows={4} placeholder="Explain the freelancer's position…" className="input resize-none" />
+                  </Field>
+                  <Field label="Freelancer's evidence URL (optional)">
+                    <input value={freelancerEvidence} onChange={(e) => setFreelancerEvidence(e.target.value)} className="input font-mono text-xs" placeholder="https://…" />
+                  </Field>
+                </div>
               </div>
+
               <button onClick={() => { const pick = examples[Math.floor(Math.random() * examples.length)]; setClientStmt(pick.client); setFreelancerStmt(pick.freelancer); }} type="button" className="inline-flex items-center gap-2 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors">
                 <Sparkles className="h-3.5 w-3.5" /> Random fill example
               </button>
-              <button onClick={handleOpen} disabled={!canOpen || loading} className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-                {loading ? "Opening…" : "Open dispute"}
+
+              {!connected && <div className="rounded-lg border border-gold/20 bg-gold/5 p-2 text-xs text-gold-soft text-center">Connect wallet to resolve</div>}
+
+              <button onClick={handleResolve} disabled={!canResolve || loading} className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                {loading ? "AI deliberating…" : "Verify & resolve dispute"}
               </button>
             </div>
           )}
 
-          {step === "resolve" && (
+          {step === "done" && resolution && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-gold/20 p-4 text-center space-y-3">
-                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">AI resolution</div>
-                <p className="text-sm text-muted-foreground">AI fetches the submitted work + evidence, then validators independently reason to reach a binding verdict.</p>
-                {disputeId && <div className="text-xs text-gold-soft">Dispute #{disputeId.toString()}</div>}
-                {!disputeId && (
-                  <div className="flex gap-2">
-                    <input value={manualDisputeId} onChange={(e) => setManualDisputeId(e.target.value)} className="input flex-1 text-center font-mono" placeholder="Dispute ID (manual)" />
-                  </div>
-                )}
-                {debugInfo && <div className="rounded-lg bg-black/20 p-2 text-[10px] text-muted-foreground font-mono break-all">{debugInfo}</div>}
-                <button onClick={handleResolve} disabled={loading} className="btn-gold rounded-full px-8 py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-                  {loading ? "AI resolving…" : "Resolve with AI"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === "execute" && resolution && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-gold/20 p-4 space-y-3">
-                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Verdict</div>
-                <div className={`text-2xl font-display text-center ${resolution.verdict === "freelancer" ? "text-green-400" : "text-destructive"}`}>
+              <div className={`rounded-xl border p-4 space-y-3 ${resolution.verdict === "client" ? "border-red-500/30 bg-red-500/5" : "border-green-500/30 bg-green-500/5"}`}>
+                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Verdict — stored on-chain</div>
+                <div className={`text-2xl font-display text-center ${resolution.verdict === "client" ? "text-destructive" : "text-green-400"}`}>
                   {resolution.verdict === "client" ? "Client" : resolution.verdict === "freelancer" ? "Freelancer" : "Split"} wins
                 </div>
-                {resolution.juror_votes?.length > 0 && (
-                  <div className="flex justify-center gap-1">
-                    {resolution.juror_votes.map((v: any, i: number) => (
-                      <span key={i} className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono ${v.vote === "client" ? "bg-destructive/10 text-destructive" : v.vote === "freelancer" ? "bg-green-400/10 text-green-400" : "bg-gold/10 text-gold-soft"}`}>{v.vote}</span>
-                    ))}
-                  </div>
+                {resolution.reasoning && (
+                  <div className="rounded-lg bg-black/30 p-3 text-xs text-muted-foreground leading-relaxed">{resolution.reasoning}</div>
                 )}
-                <button onClick={handleExecute} disabled={loading} className="btn-gold w-full rounded-full py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-                  {loading ? "Executing…" : "Execute & release funds"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === "done" && execution && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-green-400/30 bg-green-400/5 p-4 text-center space-y-2">
-                <CheckCircle2 className="h-8 w-8 mx-auto text-green-400" />
-                <div className="font-display text-xl text-gold-gradient">Dispute resolved</div>
-                <div className="text-xs text-muted-foreground">
-                  Escrow #{escrowId} — Winner: {execution.winner === "0x0000000000000000000000000000000000000000" ? "Split" : execution.winner?.slice(0, 10) + "…"}
-                  <br />
-                  Status: {execution.status === "refunded" ? "Refunded to client" : execution.status}
+                <div className="text-xs text-muted-foreground text-center space-y-1">
+                  {resolution.verdict === "freelancer" && (
+                    <p className="text-green-400">✓ Milestone verified — the client can now release payment from the <span className="font-medium">Release</span> tab.</p>
+                  )}
+                  {resolution.verdict === "client" && (
+                    <p className="text-destructive">Refunded to client — the milestone amount was returned on-chain.</p>
+                  )}
+                  {resolution.verdict === "split" && (
+                    <p className="text-gold-soft">Funds split between client &amp; freelancer.</p>
+                  )}
                 </div>
-                <button onClick={reset} className="text-xs text-gold-soft hover:text-foreground underline underline-offset-2">Start new dispute</button>
+                <button onClick={reset} className="text-xs text-gold-soft hover:text-foreground underline underline-offset-2 mx-auto block">Start new dispute</button>
               </div>
             </div>
           )}
@@ -1690,7 +1586,6 @@ function DisputeDemo() {
             <div className="rounded-xl border border-gold/20 p-3 text-xs space-y-1">
               <div className="text-gold-soft uppercase tracking-wider">Tx</div>
               <a href={`https://explorer-studio.genlayer.com/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-marble underline underline-offset-2 break-all">{txHash.slice(0, 20)}…{txHash.slice(-8)}</a>
-              {disputeId && <div className="text-muted-foreground">Dispute #{disputeId.toString()}</div>}
             </div>
           )}
 
@@ -1699,15 +1594,14 @@ function DisputeDemo() {
       }
       right={
         <div className="flex h-full flex-col items-center justify-center text-center">
-          <RomanCandle active={step !== "open" && step !== "done"} durationMs={8000} label="Dispute flow" size="lg" />
+          <RomanCandle active={step === "resolving"} durationMs={8000} label="Dispute flow" size="lg" />
           <div className="mt-4 text-xs uppercase tracking-[0.25em] text-muted-foreground">
-            {step === "open" ? "Awaiting dispute" : step === "votes" ? "Jurors voting" : step === "resolve" ? "AI deliberating" : step === "execute" ? "Ready to execute" : "Resolved"}
+            {step === "form" ? "Awaiting dispute" : step === "resolving" ? "AI deliberating" : "Resolved"}
           </div>
           <p className="mt-2 max-w-[200px] text-[10px] text-muted-foreground">
-            {step === "open" ? "Fill the dispute details and open it on-chain." :
-             step === "resolve" ? "AI fetches the submitted work + evidence, then renders a binding verdict." :
-             step === "execute" ? "Execute to atomically release funds to the winner." :
-             "Funds released. Escrow closed."}
+            {step === "form" ? "Fill both statements and let AI verify both sides in one step." :
+             step === "resolving" ? "AI fetches both sources &amp; reasons, then renders a binding verdict." :
+             "Verdict applied on-chain. Result is stored permanently."}
           </p>
         </div>
       }

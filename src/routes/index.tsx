@@ -178,7 +178,7 @@ const featureList = [
   { icon: ShieldCheck, title: "AI Escrow", desc: "Funds are locked in an Intelligent Contract the moment the job begins." },
   { icon: FileSearch, title: "Milestone Verification", desc: "AI fetches and inspects GitHub, live URLs, Figma and docs against the requirements." },
   { icon: Coins, title: "Client-Controlled Release", desc: "Once evidence passes AI consensus, the client releases the milestone payment on-chain." },
-  { icon: Scale, title: "Dispute Resolution", desc: "GenLayer validators fetch the submitted work + both arguments and reason to a binding verdict." },
+  { icon: Scale, title: "Dispute Resolution", desc: "One-step AI dispute: validators fetch both sources &amp; reasons and apply a binding verdict on-chain." },
   { icon: Star, title: "Reputation Score", desc: "Every completed milestone builds a portable, on-chain reputation." },
   { icon: Lock, title: "Audit Trail", desc: "Every decision, hash and payout is permanently recorded on-chain." },
 ];
@@ -217,7 +217,7 @@ const steps = [
   { n: "II", title: "Freelancer accepts", desc: "The freelancer reviews the terms and locks in the engagement on-chain.", icon: ShieldCheck },
   { n: "III", title: "Evidence is submitted", desc: "Links to GitHub, Figma, live URL, docs, demo video or screenshots are attached.", icon: FileSearch },
   { n: "IV", title: "AI evaluates", desc: "GenLayer validators reason about the requirements against the delivered evidence.", icon: Cpu },
-  { n: "V", title: "Payment or dispute", desc: "If passed, the client releases payment. If disputed, the contract judges both sides.", icon: Scale },
+  { n: "V", title: "Payment or dispute", desc: "If passed, the client releases payment. If disputed, AI judges both sides in one step.", icon: Scale },
 ];
 
 function HowItWorks() {

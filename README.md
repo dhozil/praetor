@@ -24,7 +24,13 @@ A designer delivers mockups, Figma links, or assets. The AI checks whether the d
 Writers submit published articles or translation proofs. The AI validates word count, topic relevance, and formatting requirements against the milestone criteria before signaling completion.
 
 ### ⚖️ Dispute Resolution
-When a milestone is rejected (or either party disagrees with the AI result), either party can open a dispute. Both submit statements and evidence. GenLayer AI validators **directly evaluate the submitted work + both parties' statements + evidence** via web-fetched content, then reach consensus on a binding verdict — **client wins**, **freelancer wins**, or **split**. Funds are released to the winner on-chain.
+When a milestone is rejected (or either party disagrees with the AI result), either party can resolve a dispute in a **single step**. Both submit statements and optional evidence URLs. GenLayer AI validators **directly evaluate the submitted work + both parties' statements + evidence** via web-fetched content, then reach consensus on a binding verdict — **client wins**, **freelancer wins**, or **split** — applied on-chain immediately.
+
+- **Freelancer wins** → the milestone is marked **verified**, so the client releases payment from the Release tab.
+- **Client wins** → the milestone amount is refunded to the client on-chain.
+- **Split** → the milestone amount is split between both parties on-chain.
+
+The verdict and AI reasoning are stored permanently on-chain — no separate "execute" step or dispute ID is needed.
 
 ---
 
@@ -72,7 +78,7 @@ When a milestone is rejected (or either party disagrees with the AI result), eit
 
 ## Intelligent Contract
 
-Written in Python using `py-genlayer`. Deployed on **Studionet** at **`0x81dF41D90f9Ca89983910ba6aa48b2a844F8cad6`**.
+Written in Python using `py-genlayer`. Deployed on **Studionet** at **`0x35D0E355846fa26DBcae0c057678057C40ed610F`**.
 
 Deploy:
 ```bash
@@ -96,6 +102,7 @@ genlayer deploy --contract contracts/praetor.py --rpc https://studio.genlayer.co
 | `is_verified(escrowId, milestoneIdx)` | Boolean pass/fail |
 | `get_dispute(id)` | Full dispute data |
 | `get_dispute_counter()` | Total disputes opened |
+| `get_dispute_by_escrow(escrowId)` | Latest dispute ID for an escrow |
 | `get_praetor_score(addr)` | On-chain reputation score (0–100) |
 | `get_profile(addr)` | Full reputation profile (name, jobs, disputes, earnings) |
 | `get_event(id)` | Audit event by ID |
@@ -112,10 +119,8 @@ genlayer deploy --contract contracts/praetor.py --rpc https://studio.genlayer.co
 | `submit_evidence(escrowId, milestoneIdx, url)` | Freelancer submits proof of work on-chain |
 | `verify_milestone(...)` | Trigger AI verification (fetch evidence content → LLM consensus → score) |
 | `release_payment(escrowId, milestoneIdx)` | Client releases milestone payment (auto-records reputation) |
-| `open_dispute(...)` | Either party opens a dispute with statements + evidence |
-| `cast_juror_vote(disputeId, vote, reasoning)` | Juror votes (client/freelancer/split) |
-| `resolve_dispute(disputeId)` | AI aggregates juror votes into final verdict |
-| `execute_dispute_verdict(disputeId)` | Releases funds to winner per verdict (auto-records dispute result) |
+| `resolve_dispute(escrowId, milestoneIdx, clientStmt, clientEvidence, freelancerStmt, freelancerEvidence)` | Single-step AI dispute resolution — opens + verifies + applies verdict on-chain, stores verdict &amp; reasoning |
+| `get_dispute_by_escrow(escrowId)` | Latest dispute ID for an escrow (no manual ID lookup needed) |
 | `register_user(displayName, role)` | Register on-chain profile for reputation tracking |
 | `record_job(addr, role, amount, completed)` | Record a completed job to reputation |
 | `record_dispute_result(addr, won)` | Record dispute outcome to reputation |
@@ -146,7 +151,7 @@ genlayer deploy --contract contracts/praetor.py --rpc https://studio.genlayer.co
 | **Dashboard** | Role toggle (client/freelancer). See your jobs, escrows, applicants, milestones. Assign freelancer directly. Auto-refresh every 15s. |
 | **AI Verify** | Pick an escrow + milestone. Attach evidence (GitHub, Live URL, Figma, Docs). Submit evidence on-chain. See AI consensus step-by-step: leader fetches URLs → validators verify → result. |
 | **Release** | Select escrow + milestone. Client releases payment. Auto-records reputation for both parties. |
-| **Dispute** | End-to-end flow: Open dispute → AI resolution (fetches work + evidence) → execute verdict (funds released on-chain, dispute result recorded). Built-in random fill examples. |
+| **Dispute** | Single-step: select escrow → fill both statements + evidence → AI fetches work + both sources → binding verdict applied on-chain and stored. Freelancer win marks milestone verified (client releases from Release tab); client win refunds on-chain. No execute step needed. Built-in random fill examples. |
 | **History** | Completed jobs grouped by role. Milestone breakdown, escrow status, verification results. |
 | **Reputation** | Register profile (name + role). Auto-displays your stats on connect: score, jobs posted/worked, disputes won, earnings. Look up any wallet. |
 
@@ -163,7 +168,7 @@ pnpm run build        # Production build → dist/
 ### Prerequisites
 - **Rabby Wallet** or **MetaMask** (GenLayer Snap optional for Studio)
 - A wallet funded with GEN on Studionet (use faucet at [studio.genlayer.com](https://studio.genlayer.com))
-- Contract deployed on Studionet at `0x81dF41D90f9Ca89983910ba6aa48b2a844F8cad6`
+- Contract deployed on Studionet at `0x35D0E355846fa26DBcae0c057678057C40ed610F`
 
 ### Deploy to Cloudflare Pages
 ```bash

@@ -270,7 +270,7 @@ export async function verifyMilestone(
 
 // ─── Dispute Write ──────────────────────────────────────────────────────────
 
-export async function openDispute(
+export async function resolveDispute(
   walletAddress: string,
   escrowId: bigint,
   milestoneIndex: bigint,
@@ -281,49 +281,15 @@ export async function openDispute(
 ): Promise<string> {
   const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
-    functionName: "open_dispute",
-    args: [escrowId, milestoneIndex, clientStatement, clientEvidence, freelancerStatement, freelancerEvidence],
-    value: BigInt(0),
-  });
-  return txHash as string;
-}
-
-export async function castJurorVote(
-  walletAddress: string,
-  disputeId: bigint,
-  vote: string,
-  reasoning: string,
-): Promise<string> {
-  const txHash = await getWriteClient(walletAddress).writeContract({
-    address: PRAETOR_ADDRESS,
-    functionName: "cast_juror_vote",
-    args: [disputeId, vote, reasoning],
-    value: BigInt(0),
-  });
-  return txHash as string;
-}
-
-export async function resolveDispute(
-  walletAddress: string,
-  disputeId: bigint,
-): Promise<string> {
-  const txHash = await getWriteClient(walletAddress).writeContract({
-    address: PRAETOR_ADDRESS,
     functionName: "resolve_dispute",
-    args: [disputeId],
-    value: BigInt(0),
-  });
-  return txHash as string;
-}
-
-export async function executeDisputeVerdict(
-  walletAddress: string,
-  disputeId: bigint,
-): Promise<string> {
-  const txHash = await getWriteClient(walletAddress).writeContract({
-    address: PRAETOR_ADDRESS,
-    functionName: "execute_dispute_verdict",
-    args: [disputeId],
+    args: [
+      escrowId,
+      milestoneIndex,
+      clientStatement,
+      clientEvidence,
+      freelancerStatement,
+      freelancerEvidence,
+    ],
     value: BigInt(0),
   });
   return txHash as string;
@@ -511,6 +477,17 @@ export async function getDisputeFresh(disputeId: bigint): Promise<any> {
     args: [disputeId],
   });
   return result;
+}
+
+export async function getDisputeByEscrowFresh(escrowId: bigint): Promise<bigint | null> {
+  const result = await readClient.readContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "get_dispute_by_escrow",
+    args: [escrowId],
+  });
+  const val = result as bigint;
+  if (val === 2n ** 256n - 1n) return null;
+  return val;
 }
 
 export async function isVerified(

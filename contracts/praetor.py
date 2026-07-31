@@ -80,22 +80,14 @@ class DisputeStatement:
 
 @allow_storage
 @dataclass
-class JurorVote:
-    juror_address: Address
-    vote: str
-    reasoning: str
-
-
-@allow_storage
-@dataclass
 class Dispute:
     escrow_id: u256
     milestone_index: u256
     client_statement: DisputeStatement
     freelancer_statement: DisputeStatement
-    juror_votes: DynArray[JurorVote]
     verdict: str
     resolved: bool
+    reasoning: str
 
 
 @allow_storage
@@ -145,7 +137,7 @@ class PraetorV2(gl.Contract):
     # Dispute
     dispute_counter: u256
     disputes: TreeMap[u256, Dispute]
-    num_jurors: u8
+    dispute_by_escrow: TreeMap[u256, u256]
 
     # Reputation
     profiles: TreeMap[Address, ReputationProfile]
@@ -163,7 +155,6 @@ class PraetorV2(gl.Contract):
         self.escrow_counter = u256(0)
         self.platform_fee_percent = int(platform_fee_percent)
         self.dispute_counter = u256(0)
-        self.num_jurors = u8(5)
         self.event_counter = u256(0)
 
     # ── Marketplace: Job Posting ─────────────────────────────────────────────
@@ -527,7 +518,7 @@ Respond ONLY as JSON:
     # ── Dispute Methods ─────────────────────────────────────────────────────
 
     @gl.public.write
-    def open_dispute(
+    def resolve_dispute(
         self,
         escrow_id: int,
         milestone_index: int,
@@ -535,63 +526,23 @@ Respond ONLY as JSON:
         client_evidence: DynArray[str],
         freelancer_statement: str,
         freelancer_evidence: DynArray[str],
-    ) -> int:
+    ) -> str:
+        escrow = self.escrows[escrow_id]
+        if escrow.status == "completed":
+            raise gl.vm.UserError("Escrow already completed")
+
+        idx = int(milestone_index)
+        if idx < 0 or idx >= len(escrow.milestones):
+            raise gl.vm.UserError("Invalid milestone index")
+
         dispute_id = self.dispute_counter
         self.dispute_counter = self.dispute_counter + u256(1)
 
-        escrow = self.escrows[escrow_id]
         escrow.dispute_open = True
-        escrow.status = "disputed"
         self.escrows[escrow_id] = escrow
 
-        self.disputes[dispute_id] = Dispute(
-            escrow_id=escrow_id,
-            milestone_index=milestone_index,
-            client_statement=DisputeStatement(
-                party_address=escrow.client,
-                statement=client_statement,
-                evidence_urls=client_evidence,
-            ),
-            freelancer_statement=DisputeStatement(
-                party_address=escrow.freelancer,
-                statement=freelancer_statement,
-                evidence_urls=freelancer_evidence,
-            ),
-            juror_votes=[],
-            verdict="",
-            resolved=False,
-        )
-        self._log_event("dispute_opened", escrow_id, f"Dispute #{dispute_id} opened")
-        return dispute_id
-
-    @gl.public.write
-    def cast_juror_vote(self, dispute_id: int, vote: str, reasoning: str):
-        dispute = self.disputes[dispute_id]
-        if dispute.resolved:
-            raise gl.vm.UserError("Dispute already resolved")
-        if vote not in ("client", "freelancer", "split"):
-            raise gl.vm.UserError("Vote must be client/freelancer/split")
-        dispute.juror_votes.append(JurorVote(
-            juror_address=gl.message.sender_address,
-            vote=vote,
-            reasoning=reasoning,
-        ))
-        self.disputes[dispute_id] = dispute
-
-    @gl.public.write
-    def resolve_dispute(self, dispute_id: int) -> str:
-        dispute = self.disputes[dispute_id]
-        if dispute.resolved:
-            raise gl.vm.UserError("Already resolved")
-
-        escrow = self.escrows[dispute.escrow_id]
-        idx = int(dispute.milestone_index)
-        work_evidence = escrow.milestones[idx].evidence_url if idx < len(escrow.milestones) else ""
-        work_title = escrow.milestones[idx].title if idx < len(escrow.milestones) else ""
-        client_stmt = dispute.client_statement.statement
-        client_evidence = [str(u) for u in dispute.client_statement.evidence_urls]
-        freelancer_stmt = dispute.freelancer_statement.statement
-        freelancer_evidence = [str(u) for u in dispute.freelancer_statement.evidence_urls]
+        work_evidence = escrow.milestones[idx].evidence_url
+        work_title = escrow.milestones[idx].title
 
         def fetch_evidence(urls) -> str:
             out = ""
@@ -618,10 +569,10 @@ MILESTONE: {work_title}
 FREELANCER'S SUBMITTED WORK (evidence URL): {work_evidence}
 {work_section}
 
-CLIENT'S STATEMENT: {client_stmt}
+CLIENT'S STATEMENT: {client_statement}
 CLIENT'S EVIDENCE:{client_ev}
 
-FREELANCER'S STATEMENT: {freelancer_stmt}
+FREELANCER'S STATEMENT: {freelancer_statement}
 FREELANCER'S EVIDENCE:{freelancer_ev}
 
 Evaluate the submitted work and both arguments. Decide who should receive the funds.
@@ -646,12 +597,66 @@ Respond ONLY as JSON:
             return isinstance(my, dict) and my["verdict"] == data["verdict"]
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+        verdict = result["verdict"]
+        reasoning = result["reasoning"]
 
-        dispute.verdict = result["verdict"]
-        dispute.resolved = True
-        self.disputes[dispute_id] = dispute
-        self._log_event("dispute_resolved", dispute.escrow_id, f"Verdict: {result['verdict']}")
-        return result["verdict"]
+        self.disputes[dispute_id] = Dispute(
+            escrow_id=escrow_id,
+            milestone_index=milestone_index,
+            client_statement=DisputeStatement(
+                party_address=escrow.client,
+                statement=client_statement,
+                evidence_urls=client_evidence,
+            ),
+            freelancer_statement=DisputeStatement(
+                party_address=escrow.freelancer,
+                statement=freelancer_statement,
+                evidence_urls=freelancer_evidence,
+            ),
+            verdict=verdict,
+            resolved=True,
+            reasoning=reasoning,
+        )
+        self.dispute_by_escrow[escrow_id] = dispute_id
+        self._log_event("dispute_opened", escrow_id, f"Dispute #{dispute_id} opened")
+
+        escrow = self.escrows[escrow_id]
+        ms = escrow.milestones[idx]
+        amount = int(ms.amount)
+
+        if verdict == "freelancer":
+            ms.status = "verified"
+            ms.verified = True
+            escrow.winner = escrow.freelancer
+            self._log_event("dispute_resolved", escrow_id,
+                            f"Dispute #{dispute_id}: freelancer wins — milestone verified")
+            self._record_dispute_result(str(escrow.freelancer), True)
+            self._record_dispute_result(str(escrow.client), False)
+        elif verdict == "client":
+            _EOA(Address(escrow.client)).emit_transfer(value=u256(amount))
+            ms.status = "refunded"
+            escrow.winner = escrow.client
+            self._log_event("dispute_resolved", escrow_id,
+                            f"Dispute #{dispute_id}: client wins — refunded {amount} wei")
+            self._record_dispute_result(str(escrow.client), True)
+            self._record_dispute_result(str(escrow.freelancer), False)
+        else:  # split
+            half = amount // 2
+            remainder = amount - half
+            _EOA(Address(escrow.client)).emit_transfer(value=u256(half))
+            _EOA(Address(escrow.freelancer)).emit_transfer(value=u256(remainder))
+            ms.status = "split"
+            escrow.winner = Address("0x0000000000000000000000000000000000000000")
+            self._log_event("dispute_resolved", escrow_id,
+                            f"Dispute #{dispute_id}: split — client {half}, freelancer {remainder}")
+            self._record_dispute_result(str(escrow.client), True)
+            self._record_dispute_result(str(escrow.freelancer), True)
+
+        escrow.milestones[idx] = ms
+        escrow.dispute_open = False
+        self.escrows[escrow_id] = escrow
+        self._log_event("dispute_resolved", escrow_id, f"Verdict: {verdict}")
+        return verdict
 
     @gl.public.view
     def get_dispute(self, dispute_id: int) -> Dispute:
@@ -661,58 +666,11 @@ Respond ONLY as JSON:
     def get_dispute_counter(self) -> int:
         return self.dispute_counter
 
-    @gl.public.write
-    def execute_dispute_verdict(self, dispute_id: int):
-        dispute = self.disputes[dispute_id]
-        if not dispute.resolved:
-            raise gl.vm.UserError("Dispute not yet resolved")
-        escrow = self.escrows[dispute.escrow_id]
-        if escrow.status != "disputed":
-            raise gl.vm.UserError("Escrow not in disputed state")
-
-        # Calculate remaining budget (unpaid milestone amounts)
-        remaining = u256(0)
-        for m in escrow.milestones:
-            if m.status != "paid":
-                remaining = remaining + u256(int(m.amount))
-
-        pct = int(self.platform_fee_percent)
-        fee = (int(remaining) * pct) // 100
-        payout = int(remaining) - fee
-
-        verdict = dispute.verdict
-        if verdict == "client":
-            recipient = escrow.client
-            escrow.winner = escrow.client
-            escrow.status = "refunded"
-            self._log_event("dispute_executed", dispute.escrow_id,
-                            f"Verdict: client — refunded {payout} wei")
-        elif verdict == "freelancer":
-            recipient = escrow.freelancer
-            escrow.winner = escrow.freelancer
-            escrow.status = "completed"
-            self._log_event("dispute_executed", dispute.escrow_id,
-                            f"Verdict: freelancer — paid {payout} wei")
-        else:  # split
-            half = int(payout) // 2
-            remainder = int(payout) - half
-            _EOA(Address(escrow.client)).emit_transfer(value=u256(half))
-            _EOA(Address(escrow.freelancer)).emit_transfer(value=u256(remainder))
-            escrow.winner = Address("0x0000000000000000000000000000000000000000")
-            escrow.status = "completed"
-            self._log_event("dispute_executed", dispute.escrow_id,
-                            f"Verdict: split — client {half}, freelancer {remainder}")
-            # Update reputation for both
-            self._record_dispute_result(str(escrow.client), True)
-            self._record_dispute_result(str(escrow.freelancer), True)
-            self.escrows[dispute.escrow_id] = escrow
-            return
-
-        _EOA(Address(recipient)).emit_transfer(value=u256(payout))
-        self.escrows[dispute.escrow_id] = escrow
-        self._record_dispute_result(str(recipient), True)
-        other = str(escrow.freelancer) if verdict == "client" else str(escrow.client)
-        self._record_dispute_result(other, False)
+    @gl.public.view
+    def get_dispute_by_escrow(self, escrow_id: int) -> int:
+        if escrow_id not in self.dispute_by_escrow:
+            return u256(2**256 - 1)
+        return self.dispute_by_escrow[escrow_id]
 
     def _record_dispute_result(self, user_address: str, won: bool):
         user = Address(user_address)
