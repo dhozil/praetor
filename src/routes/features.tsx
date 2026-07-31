@@ -1409,6 +1409,7 @@ function DisputeDemo() {
   const canOpen = escrowId.trim().length > 0 && clientStmt.trim().length > 0 && freelancerStmt.trim().length > 0 && connected;
 
   const [disputeId, setDisputeId] = useState<bigint | null>(null);
+  const [manualDisputeId, setManualDisputeId] = useState("");
   const [txHash, setTxHash] = useState("");
   const [disputeVerification, setDisputeVerification] = useState<any>(null);
 
@@ -1441,13 +1442,16 @@ function DisputeDemo() {
           try {
             const c = await getDisputeCounterFresh();
             if (c > 0n) {
-              const id = c - 1n;
-              const d = await getDisputeFresh(id);
-              if (d && d.escrow_id?.toString() === escrowId) {
-                setDisputeId(id);
-                found = true;
-                break;
+              // iterate all disputes (newest first) to find one matching our escrow
+              for (let i = Number(c) - 1; i >= 0; i--) {
+                const d = await getDisputeFresh(BigInt(i));
+                if (d && d.escrow_id?.toString() === escrowId) {
+                  setDisputeId(BigInt(i));
+                  found = true;
+                  break;
+                }
               }
+              if (found) break;
             }
           } catch { /* */ }
           await new Promise((r) => setTimeout(r, 2000));
@@ -1476,12 +1480,14 @@ function DisputeDemo() {
   };
 
   const handleResolve = async () => {
-    if (!disputeId) { setError("Dispute ID not found. Re-open the dispute."); return; }
+    let did = disputeId;
+    if (!did && manualDisputeId.trim()) did = BigInt(manualDisputeId.trim());
+    if (!did) { setError("Dispute ID not found. Enter it manually below or re-open the dispute."); return; }
     setError(""); setLoading(true);
     try {
-      const hash = await resolveDispute(account!, disputeId);
+      const hash = await resolveDispute(account!, did);
       await waitForReceipt(hash);
-      const d = await getDispute(disputeId);
+      const d = await getDispute(did);
       setResolution(d);
       setStep("execute");
       invalidateAllCache();
@@ -1512,7 +1518,7 @@ function DisputeDemo() {
 
   const reset = () => {
     setStep("open"); setEscrowId(""); setMilestoneIdx(""); setClientStmt(""); setFreelancerStmt(""); setClientAddr(""); setFreelancerAddr("");
-    setDisputeId(null); setTxHash(""); setJuryVotes([]); setDisputeVerification(null);
+    setDisputeId(null); setManualDisputeId(""); setTxHash(""); setJuryVotes([]); setDisputeVerification(null);
     setCurrentVote({ vote: "client", reasoning: "" });
     setResolution(null); setExecution(null); setError("");
   };
@@ -1626,6 +1632,12 @@ function DisputeDemo() {
               <div className="rounded-xl border border-gold/20 p-4 text-center space-y-3">
                 <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">AI resolution</div>
                 <p className="text-sm text-muted-foreground">AI fetches the submitted work + evidence, then validators independently reason to reach a binding verdict.</p>
+                {disputeId && <div className="text-xs text-gold-soft">Dispute #{disputeId.toString()}</div>}
+                {!disputeId && (
+                  <div className="flex gap-2">
+                    <input value={manualDisputeId} onChange={(e) => setManualDisputeId(e.target.value)} className="input flex-1 text-center font-mono" placeholder="Dispute ID (manual)" />
+                  </div>
+                )}
                 <button onClick={handleResolve} disabled={loading} className="btn-gold rounded-full px-8 py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                   {loading ? "AI resolving…" : "Resolve with AI"}
                 </button>
