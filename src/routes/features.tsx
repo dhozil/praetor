@@ -1449,7 +1449,7 @@ function DisputeDemo() {
         }
       }
       if (!found) setError("Could not find dispute ID — check the explorer for your open_dispute tx.");
-      setStep("votes");
+      setStep("resolve");
     } catch (e: any) { setError(e?.shortMessage || e?.message || "Open dispute failed"); }
     finally { setLoading(false); }
   };
@@ -1471,10 +1471,10 @@ function DisputeDemo() {
   };
 
   const handleResolve = async () => {
-    if (!disputeId || !account) return;
+    if (!disputeId) { setError("Dispute ID not found. Re-open the dispute."); return; }
     setError(""); setLoading(true);
     try {
-      const hash = await resolveDispute(account, disputeId);
+      const hash = await resolveDispute(account!, disputeId);
       await waitForReceipt(hash);
       const d = await getDispute(disputeId);
       setResolution(d);
@@ -1520,8 +1520,8 @@ function DisputeDemo() {
     { escrowId: "4", milestoneIdx: "3", client: "The DAO governance dApp has a critical bug: proposal votes aren't counted correctly when quorum is reached on the last day. We lost a $10k treasury vote because of this. The freelancer blames the testing environment.", freelancer: "I delivered the code with full test coverage and a working demo on the testnet. The client modified the voting parameters after deployment without updating the quorum calculation. I can provide git history showing the client's changes broke the logic." },
   ];
 
-  const stepLabels = ["1. Open", "2. Vote", "3. AI Resolve", "4. Execute", "Done"];
-  const stepIndex = ["open", "votes", "resolve", "execute", "done"].indexOf(step);
+  const stepLabels = ["1. Open", "2. AI Resolve", "3. Execute", "Done"];
+  const stepIndex = ["open", "resolve", "execute", "done"].indexOf(step);
 
   return (
     <DemoShell
@@ -1616,41 +1616,6 @@ function DisputeDemo() {
             </div>
           )}
 
-          {step === "votes" && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-gold/20 p-4">
-                <div className="text-xs uppercase tracking-[0.25em] text-gold-soft mb-3">Jury votes ({juryVotes.length}/5){disputeId ? <span className="text-muted-foreground normal-case tracking-normal"> — Dispute #{disputeId.toString()}</span> : null}</div>
-                <div className="flex justify-around mb-4">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex flex-col items-center gap-2">
-                      <div className={`grid h-12 w-12 place-items-center rounded-full border text-xs ${i < juryVotes.length ? (juryVotes[i].vote === "freelancer" ? "border-gold/60 bg-gold/15 text-marble" : "border-destructive/50 bg-destructive/10 text-destructive") : "border-gold/20 text-muted-foreground"}`}>
-                        {i < juryVotes.length ? (juryVotes[i].vote === "freelancer" ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />) : <span className="font-mono">{i + 1}</span>}
-                      </div>
-                      <div className="text-[10px] uppercase text-muted-foreground">V{i + 1}</div>
-                    </div>
-                  ))}
-                </div>
-                {juryVotes.length < 5 && (
-                  <div className="space-y-3">
-                    <p className="text-xs text-muted-foreground">Vote {juryVotes.length + 1} of 5:</p>
-                    <div className="flex gap-2">
-                      <select value={currentVote.vote} onChange={(e) => setCurrentVote((v) => ({ ...v, vote: e.target.value }))} className="input w-28">
-                        <option value="client">Client</option>
-                        <option value="freelancer">Freelancer</option>
-                        <option value="split">Split</option>
-                      </select>
-                      <textarea value={currentVote.reasoning} onChange={(e) => setCurrentVote((v) => ({ ...v, reasoning: e.target.value }))} className="input flex-1 resize-none" rows={2} placeholder="Reasoning…" />
-                    </div>
-                    <button onClick={handleCastVote} disabled={loading} className="btn-gold w-full rounded-full py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-                      {loading ? "Casting…" : `Cast vote ${juryVotes.length + 1}`}
-                    </button>
-                    {!currentVote.reasoning.trim() && <p className="text-[10px] text-muted-foreground text-center">Add your reasoning before voting.</p>}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           {step === "resolve" && (
             <div className="space-y-4">
               <div className="rounded-xl border border-gold/20 p-4 text-center space-y-3">
@@ -1718,8 +1683,7 @@ function DisputeDemo() {
           </div>
           <p className="mt-2 max-w-[200px] text-[10px] text-muted-foreground">
             {step === "open" ? "Fill the dispute details and open it on-chain." :
-             step === "votes" ? `${juryVotes.length}/5 jurors have voted.` :
-             step === "resolve" ? "AI synthesizes evidence and votes into a binding verdict." :
+             step === "resolve" ? "AI fetches the submitted work + evidence, then renders a binding verdict." :
              step === "execute" ? "Execute to atomically release funds to the winner." :
              "Funds released. Escrow closed."}
           </p>

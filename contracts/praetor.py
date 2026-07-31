@@ -573,27 +573,45 @@ Respond ONLY as JSON:
         if dispute.resolved:
             raise gl.vm.UserError("Already resolved")
 
-        votes_text = ""
-        for v in dispute.juror_votes:
-            votes_text += f"\n  {v.vote} - {v.reasoning}"
+        escrow = self.escrows[dispute.escrow_id]
+        idx = int(dispute.milestone_index)
+        work_evidence = escrow.milestones[idx].evidence_url if idx < len(escrow.milestones) else ""
+        work_title = escrow.milestones[idx].title if idx < len(escrow.milestones) else ""
+        client_stmt = dispute.client_statement.statement
+        client_evidence = [str(u) for u in dispute.client_statement.evidence_urls]
+        freelancer_stmt = dispute.freelancer_statement.statement
+        freelancer_evidence = [str(u) for u in dispute.freelancer_statement.evidence_urls]
 
-        prompt = f"""
+        def fetch_evidence(urls) -> str:
+            out = ""
+            for u in urls:
+                out += f"\n  - {u}"
+                try:
+                    content = gl.nondet.web.render(u, mode="text")
+                    out += f"\n    Content: {content[:1000]}"
+                except Exception:
+                    out += "\n    (Could not fetch)"
+            return out
+
+        def leader_fn() -> dict:
+            prompt = f"""
 You are an AI dispute resolver for Praetor escrow platform.
+The freelancer submitted work for a milestone and it was evaluated. One party disagrees with the result.
 
-CLIENT: {dispute.client_statement.statement}
-Evidence: {dispute.client_statement.evidence_urls}
+MILESTONE: {work_title}
+FREELANCER'S SUBMITTED WORK (evidence URL): {work_evidence}
+{("WORK CONTENT:\n" + fetch_evidence([work_evidence])) if work_evidence else "WORK CONTENT: none"}
 
-FREELANCER: {dispute.freelancer_statement.statement}
-Evidence: {dispute.freelancer_statement.evidence_urls}
+CLIENT'S STATEMENT: {client_stmt}
+CLIENT'S EVIDENCE:{fetch_evidence(client_evidence)}
 
-JUROR VOTES:{votes_text if votes_text else "  None"}
+FREELANCER'S STATEMENT: {freelancer_stmt}
+FREELANCER'S EVIDENCE:{fetch_evidence(freelancer_evidence)}
 
-Decide fairly who should receive funds.
+Evaluate the submitted work and both arguments. Decide who should receive the funds.
 Respond ONLY as JSON:
 {{"verdict": "client"|"freelancer"|"split", "reasoning": "string"}}
 """
-
-        def leader_fn():
             res = gl.nondet.exec_prompt(prompt, response_format="json")
             if not isinstance(res, dict):
                 raise gl.UserError("Invalid response")
