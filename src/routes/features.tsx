@@ -48,6 +48,7 @@ import {
   verifyMilestone,
   getVerification,
   getDisputeByEscrowFresh,
+  getDisputeCounterFresh,
   getDisputeFresh,
   releasePayment,
   resolveDispute,
@@ -1430,14 +1431,32 @@ function DisputeDemo() {
 
       // Read the stored verdict — no manual dispute ID needed
       let d: any = null;
-      for (let attempt = 0; attempt < 10 && !d; attempt++) {
+      for (let attempt = 0; attempt < 30 && !d; attempt++) {
         try {
           const did = await getDisputeByEscrowFresh(BigInt(escrowId));
-          if (did !== null) d = await getDisputeFresh(did);
+          if (did !== null) {
+            d = await getDisputeFresh(did);
+          } else {
+            // Fallback: scan recent disputes for this escrow
+            const c = await getDisputeCounterFresh();
+            if (c > 0n) {
+              for (let i = Number(c) - 1; i >= 0; i--) {
+                const cand = await getDisputeFresh(BigInt(i));
+                if (cand && cand.escrow_id?.toString() === escrowId && cand.resolved) {
+                  d = cand;
+                  break;
+                }
+              }
+            }
+          }
         } catch { /* retry */ }
-        if (!d) await new Promise((r) => setTimeout(r, 2000));
+        if (!d) await new Promise((r) => setTimeout(r, 3000));
       }
-      setResolution(d || { verdict: "unknown", reasoning: "Verdict stored on-chain. Refresh to view." });
+      if (d) {
+        setResolution(d);
+      } else {
+        setResolution({ verdict: "", reasoning: "Verdict stored on-chain. Check the explorer for tx below." });
+      }
       setStep("done");
     } catch (e: any) { setError(e?.shortMessage || e?.message || "Resolve failed"); }
     finally { setLoading(false); }
@@ -1558,10 +1577,10 @@ function DisputeDemo() {
 
           {step === "done" && resolution && (
             <div className="space-y-4">
-              <div className={`rounded-xl border p-4 space-y-3 ${resolution.verdict === "client" ? "border-red-500/30 bg-red-500/5" : "border-green-500/30 bg-green-500/5"}`}>
+              <div className={`rounded-xl border p-4 space-y-3 ${resolution.verdict === "client" ? "border-red-500/30 bg-red-500/5" : resolution.verdict === "freelancer" ? "border-green-500/30 bg-green-500/5" : "border-gold/30 bg-gold/5"}`}>
                 <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">Verdict — stored on-chain</div>
-                <div className={`text-2xl font-display text-center ${resolution.verdict === "client" ? "text-destructive" : "text-green-400"}`}>
-                  {resolution.verdict === "client" ? "Client" : resolution.verdict === "freelancer" ? "Freelancer" : "Split"} wins
+                <div className={`text-2xl font-display text-center ${resolution.verdict === "client" ? "text-destructive" : resolution.verdict === "freelancer" ? "text-green-400" : resolution.verdict === "split" ? "text-gold-soft" : "text-muted-foreground"}`}>
+                  {resolution.verdict === "client" ? "Client" : resolution.verdict === "freelancer" ? "Freelancer" : resolution.verdict === "split" ? "Split" : "Pending"} wins
                 </div>
                 {resolution.reasoning && (
                   <div className="rounded-lg bg-black/30 p-3 text-xs text-muted-foreground leading-relaxed">{resolution.reasoning}</div>
@@ -1575,6 +1594,9 @@ function DisputeDemo() {
                   )}
                   {resolution.verdict === "split" && (
                     <p className="text-gold-soft">Funds split between client &amp; freelancer.</p>
+                  )}
+                  {resolution.verdict === "" && (
+                    <p className="text-muted-foreground">The verdict is stored on-chain. It may still be finalizing — check the tx in the explorer, then refresh.</p>
                   )}
                 </div>
                 <button onClick={reset} className="text-xs text-gold-soft hover:text-foreground underline underline-offset-2 mx-auto block">Start new dispute</button>
