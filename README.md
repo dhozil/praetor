@@ -78,7 +78,7 @@ The verdict and AI reasoning are stored permanently on-chain — no separate "ex
 
 ## Intelligent Contract
 
-Written in Python using `py-genlayer`. Deployed on **Studionet** at **`0xC6f5240eE86d045ABF3cDabDE5e9dDd6Dbd5DFA7`**.
+Written in Python using `py-genlayer`. Deployed on **Studionet** at **`0xC8D35b84b4A17E9CEbACaBE0b2c5a489d10CEF7e`**.
 
 Deploy:
 ```bash
@@ -168,7 +168,7 @@ pnpm run build        # Production build → dist/
 ### Prerequisites
 - **Rabby Wallet** or **MetaMask** (GenLayer Snap optional for Studio)
 - A wallet funded with GEN on Studionet (use faucet at [studio.genlayer.com](https://studio.genlayer.com))
-- Contract deployed on Studionet at `0xC6f5240eE86d045ABF3cDabDE5e9dDd6Dbd5DFA7`
+- Contract deployed on Studionet at `0xC8D35b84b4A17E9CEbACaBE0b2c5a489d10CEF7e`
 
 ### Deploy to Cloudflare Pages
 ```bash
