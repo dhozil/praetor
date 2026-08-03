@@ -372,9 +372,13 @@ class PraetorV2(gl.Contract):
         escrow = self.escrows[escrow_id]
         if gl.message.sender_address != escrow.client:
             raise gl.vm.UserError("Only client can release payment")
+        if escrow.status == "completed":
+            raise gl.vm.UserError("Escrow already completed")
 
         idx = int(milestone_index)
         ms = escrow.milestones[idx]
+        if ms.status == "paid":
+            raise gl.vm.UserError("Milestone already paid")
         if not ms.verified:
             raise gl.vm.UserError("Milestone not verified yet")
 
@@ -418,8 +422,14 @@ class PraetorV2(gl.Contract):
             raise gl.vm.UserError("At least one evidence required")
 
         escrow = self.escrows[escrow_id]
+        if escrow.status == "completed":
+            raise gl.vm.UserError("Escrow already completed")
         if gl.message.sender_address != escrow.freelancer:
             raise gl.vm.UserError("Only freelancer can verify")
+
+        idx = int(milestone_index)
+        if escrow.milestones[idx].status == "paid":
+            raise gl.vm.UserError("Milestone already paid")
 
         def leader_fn() -> dict:
             evidence_details = ""
@@ -534,18 +544,32 @@ Respond ONLY as JSON:
         if escrow.status == "completed":
             raise gl.vm.UserError("Escrow already completed")
 
+        sender = gl.message.sender_address
+        if sender != escrow.client and sender != escrow.freelancer:
+            raise gl.vm.UserError("Only escrow parties can open a dispute")
+
         idx = int(milestone_index)
         if idx < 0 or idx >= len(escrow.milestones):
             raise gl.vm.UserError("Invalid milestone index")
+
+        ms = escrow.milestones[idx]
+        if ms.status in ("paid", "refunded", "split"):
+            raise gl.vm.UserError("Milestone already settled")
+        if ms.status == "verified":
+            raise gl.vm.UserError("Milestone already verified — release payment instead")
+
+        if escrow_id in self.dispute_by_escrow:
+            existing = self.disputes[self.dispute_by_escrow[escrow_id]]
+            if existing.resolved:
+                raise gl.vm.UserError("Dispute already resolved for this escrow")
 
         dispute_id = self.dispute_counter
         self.dispute_counter = self.dispute_counter + u256(1)
 
         escrow.dispute_open = True
-        self.escrows[escrow_id] = escrow
 
-        work_evidence = escrow.milestones[idx].evidence_url
-        work_title = escrow.milestones[idx].title
+        work_evidence = ms.evidence_url
+        work_title = ms.title
 
         def fetch_evidence(urls) -> str:
             out = ""

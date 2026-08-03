@@ -141,6 +141,24 @@ genlayer deploy --contract contracts/praetor.py --rpc https://studio.genlayer.co
 6. If consensus → milestone marked verified/rejected, result stored on-chain
 ```
 
+### Security Guarantees
+
+| Threat | Mitigation |
+|---|---|
+| Arbitrary caller supplies both sides of a dispute | `resolve_dispute` only callable by the escrow's client or freelancer; `verify_milestone`/`release_payment` are role-restricted |
+| Milestone paid or refunded again after settlement | One-time guards: `release_payment` rejects `"paid"`; `verify_milestone` rejects `"paid"`; `resolve_dispute` rejects already-settled (`paid`/`refunded`/`split`) or already-resolved escrows |
+| Incorrect payout classification | Verdict → terminal status is exclusive: freelancer → `verified`, client → `refunded`, split → `split`; split deducts the platform fee before halving |
+| Payouts to non-parties | All transfers emit to `escrow.client` / `escrow.freelancer` only |
+
+### Contract Tests
+
+Direct-mode (in-memory) pytest suite covering the fund-transition guards:
+
+```bash
+pip install "genlayer-test[sim]"
+python -m pytest tests/test_praetor.py -v
+```
+
 ---
 
 ## Features
