@@ -185,6 +185,12 @@ class PraetorV2(gl.Contract):
         if gl.message.value < total:
             raise gl.vm.UserError("Insufficient funds sent")
 
+        # Refund any overpayment immediately so no value is ever stranded.
+        if gl.message.value > total:
+            overpay = int(gl.message.value) - int(total)
+            if overpay > 0:
+                _EOA(gl.message.sender_address).emit_transfer(value=u256(overpay))
+
         job_id = self.job_counter
         self.job_counter = self.job_counter + u256(1)
 
@@ -364,7 +370,7 @@ class PraetorV2(gl.Contract):
         if idx < 0 or idx >= len(escrow.milestones):
             raise gl.vm.UserError("Invalid milestone index")
         ms = escrow.milestones[idx]
-        if ms.status in ("paid", "refunded", "split"):
+        if ms.status in ("paid", "refunded", "split", "verified"):
             raise gl.vm.UserError("Milestone already settled")
         ms.evidence_url = evidence_url
         ms.status = "evidence_submitted"
@@ -412,6 +418,11 @@ class PraetorV2(gl.Contract):
         self.escrows[escrow_id] = escrow
         self._log_event("payment_released", escrow_id,
                         f"Paid {payout} wei to freelancer")
+
+        # Reputation is event-driven from the authenticated release: the client
+        # spent the amount, the freelancer earned the payout after fee.
+        self._record_job_completed(str(escrow.client), "client", amount)
+        self._record_job_completed(str(escrow.freelancer), "freelancer", payout)
 
     # ── AI Verification ─────────────────────────────────────────────────────
 
@@ -754,15 +765,16 @@ Respond ONLY as JSON:
             role=role,
         )
 
-    @gl.public.write
-    def record_job(self, user_address: str, role: str, amount: int, completed: bool):
+    def _record_job_completed(self, user_address: str, role: str, amount: int):
+        """Internal-only: update reputation from a real, authenticated on-chain
+        event (emitted by release_payment). Never callable externally so no
+        outsider can forge anyone's score/earnings."""
         user = Address(user_address)
         if user not in self.profiles:
             return
         p = self.profiles[user]
         p.total_jobs = p.total_jobs + u256(1)
-        if completed:
-            p.completed_jobs = p.completed_jobs + u256(1)
+        p.completed_jobs = p.completed_jobs + u256(1)
         amt = int(amount)
         if role == "freelancer":
             p.total_earned = p.total_earned + amt
@@ -770,10 +782,6 @@ Respond ONLY as JSON:
             p.total_spent = p.total_spent + amt
         p.praetor_score = self._calc_score(p)
         self.profiles[user] = p
-
-    @gl.public.write
-    def record_dispute_result(self, user_address: str, won: bool):
-        self._record_dispute_result(user_address, won)
 
     @gl.public.view
     def get_praetor_score(self, user_address: str) -> int:

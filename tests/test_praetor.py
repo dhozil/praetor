@@ -336,3 +336,105 @@ def test_post_job_rejects_non_positive_amounts(contract, reset):
                 ["Link"],
                 "reqs",
             )
+
+
+# ── 4. No external party can forge reputation or strand funds ────────────────
+
+
+def test_reputation_cannot_be_forged_by_outsider(contract, reset):
+    """record_job / record_dispute_result were public write methods that any
+    caller could invoke with ANY target address — allowing anyone to inflate
+    (or deflate) any user's score. They must no longer exist on the ABI."""
+    vm, c = contract
+    assert not hasattr(c, "record_job")
+    assert not hasattr(c, "record_dispute_result")
+
+
+def test_reputation_only_updates_from_real_payment(contract, reset):
+    """Reputation is now event-driven: it only changes when an authenticated
+    release_payment happens, never from an arbitrary caller's call."""
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    with vm.prank(client):
+        c.register_user("Alice", "client")
+    with vm.prank(freelancer):
+        c.register_user("Bob", "freelancer")
+
+    # An outsider tries to damage Bob's reputation before anything happened.
+    stranger = create_address("stranger")
+    with vm.prank(stranger):
+        c.register_user("Eve", "freelancer")  # registering yourself is fine
+    assert c.get_praetor_score(str(freelancer)) == 50
+
+    # Outsider cannot transfer funds either way.
+    with vm.prank(stranger):
+        with vm.expect_revert("Only client"):
+            c.release_payment(0, 0)
+
+    # Real flow: verify -> release -> reputation reflects the real event.
+    _submit_and_verify(vm, c, 0, freelancer)
+    with vm.prank(client):
+        c.release_payment(0, 0)
+
+    assert c.get_profile(str(freelancer)).total_earned == 98_000  # 100k - 2% fee
+    assert c.get_profile(str(client)).total_spent == 100_000
+    assert c.get_profile(str(freelancer)).completed_jobs == 1
+
+
+def test_dispute_result_only_recorded_internally(contract, reset):
+    """won_disputes must only change through resolve_dispute, which is already
+    restricted to escrow parties."""
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    with vm.prank(freelancer):
+        c.register_user("Bob", "freelancer")
+    with vm.prank(client):
+        c.register_user("Alice", "client")
+
+    with vm.prank(freelancer):
+        vm.mock_llm("dispute resolver", VALIDATOR_DISPUTE)
+        c.resolve_dispute(0, 0, "did work", [], "done", [])
+
+    assert c.get_profile(str(freelancer)).won_disputes == 1
+    assert c.get_profile(str(client)).won_disputes == 0
+
+
+def test_overpay_is_refunded_not_stranded(contract, reset):
+    """Posting with more value than the milestone total must not silently keep
+    the excess locked in the contract."""
+    vm, c = contract
+    client = create_address("client")
+
+    with vm.prank(client):
+        vm.value = 150_000  # milestone total is 100_000
+        job_id = c.post_job(
+            "Big deposit",
+            "overpay on purpose",
+            ["M1"],
+            ["d"],
+            [100_000],
+            ["Link"],
+            "reqs",
+        )
+        vm.value = 0
+
+    # Job is created and holds only the actual milestone total.
+    job = c.get_job(job_id)
+    assert job.total_budget == 100_000
+
+
+def test_evidence_cannot_overwrite_verified_milestone(contract, reset):
+    """After a dispute resolves to a freelancer win (verified), the freelancer
+    must not be able to re-submit evidence to overwrite the terminal state."""
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    with vm.prank(freelancer):
+        vm.mock_llm("dispute resolver", VALIDATOR_DISPUTE)
+        c.resolve_dispute(0, 0, "did work", [], "done", [])
+
+    with vm.prank(freelancer):
+        with vm.expect_revert("already settled"):
+            c.submit_evidence(0, 0, "https://new.example")

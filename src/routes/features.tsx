@@ -55,7 +55,6 @@ import {
   waitForReceipt,
   submitEvidence,
   registerUser,
-  recordJob,
   getProfile,
   getPraetorScore,
 } from "@/lib/genlayer-client";
@@ -1214,13 +1213,7 @@ function ReleaseDemo() {
     try {
       const txHash = await releasePayment(account, selectedEscrow.escrowId, BigInt(milestoneIndex));
       await waitForReceipt(txHash);
-      try {
-        const ms = selectedEscrow.milestones?.[milestoneIndex];
-        const amount = BigInt(ms?.amount || 0n);
-        await recordJob(account!, selectedEscrow.client, "client", amount, true).catch(() => {});
-        await recordJob(account!, selectedEscrow.freelancer, "freelancer", amount, true).catch(() => {});
-        invalidateAllCache();
-      } catch { /* */ }
+      invalidateAllCache();
       setStage("released");
       loadMyEscrows();
     } catch (e) {

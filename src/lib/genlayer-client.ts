@@ -531,35 +531,9 @@ export async function registerUser(
   return txHash as string;
 }
 
-export async function recordJob(
-  walletAddress: string,
-  userAddress: string,
-  role: string,
-  amount: bigint,
-  completed: boolean,
-): Promise<string> {
-  const txHash = await getWriteClient(walletAddress).writeContract({
-    address: PRAETOR_ADDRESS,
-    functionName: "record_job",
-    args: [userAddress, role, amount, completed],
-    value: BigInt(0),
-  });
-  return txHash as string;
-}
-
-export async function recordDisputeResult(
-  walletAddress: string,
-  userAddress: string,
-  won: boolean,
-): Promise<string> {
-  const txHash = await getWriteClient(walletAddress).writeContract({
-    address: PRAETOR_ADDRESS,
-    functionName: "record_dispute_result",
-    args: [userAddress, won],
-    value: BigInt(0),
-  });
-  return txHash as string;
-}
+// Reputation is now derived exclusively from authenticated on-chain events
+// (release_payment / resolve_dispute). No public record_job /
+// record_dispute_result exist, so no one can forge another user's score.
 
 // ─── Reputation Read ──────────────────────────────────────────────────────────
 
