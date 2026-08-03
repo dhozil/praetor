@@ -221,6 +221,30 @@ def test_split_milestone_cannot_be_released(contract, reset):
             c.release_payment(0, 0)
 
 
+def test_verified_milestone_cannot_be_flipped_back(contract, reset):
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    # Freelancer wins the dispute -> milestone becomes "verified" and funds
+    # are locked as releasable. A malicious freelancer must NOT be able to
+    # re-run AI verification to flip an already-verified milestone to
+    # "rejected" (that would freeze the funds forever, post-dispute).
+    with vm.prank(freelancer):
+        vm.mock_llm("dispute resolver", VALIDATOR_DISPUTE)
+        verdict = c.resolve_dispute(
+            0, 0, "did the work", [], "done", []
+        )
+    assert verdict == "freelancer"
+    assert c.get_escrow(0).milestones[0].status == "verified"
+
+    with vm.prank(freelancer):
+        with vm.expect_revert("already settled"):
+            c.verify_milestone(
+                0, 0, ["https://evidence.example"], ["Link"],
+                "Build DApp", "Milestone 1", "Core features",
+            )
+
+
 def test_paid_milestone_cannot_be_verified_again(contract, reset):
     vm, c = contract
     job_id, client, freelancer = _funded_escrow(vm, c)
@@ -279,3 +303,36 @@ def test_split_pays_both_after_fee():
     assert payout + fee == amount
     assert half + remainder == payout
     assert half == 49_000  # (100000 - 2000) / 2
+
+
+def test_post_job_rejects_non_positive_amounts(contract, reset):
+    """Negative/zero milestone amounts would under-fund the escrow and let a
+    later payout absorb another escrow's balance — reject them up-front."""
+    vm, c = contract
+    client = create_address("client")
+
+    with vm.prank(client):
+        vm.value = 1
+        with vm.expect_revert("amounts must be positive"):
+            c.post_job(
+                "Trick",
+                "underfund",
+                ["M1", "M2"],
+                ["d", "d"],
+                [1_000_000, -999_999],
+                ["Link", "Link"],
+                "req",
+            )
+
+    with vm.prank(client):
+        vm.value = 0
+        with vm.expect_revert("amounts must be positive"):
+            c.post_job(
+                "Free",
+                "zero amount",
+                ["M1"],
+                ["d"],
+                [0],
+                ["Link"],
+                "reqs",
+            )

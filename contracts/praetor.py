@@ -179,6 +179,8 @@ class PraetorV2(gl.Contract):
 
         total = u256(0)
         for amt in milestone_amounts:
+            if int(amt) <= 0:
+                raise gl.vm.UserError("Milestone amounts must be positive")
             total = total + u256(int(amt))
         if gl.message.value < total:
             raise gl.vm.UserError("Insufficient funds sent")
@@ -359,6 +361,8 @@ class PraetorV2(gl.Contract):
             raise gl.vm.UserError("Escrow not active")
 
         idx = int(milestone_index)
+        if idx < 0 or idx >= len(escrow.milestones):
+            raise gl.vm.UserError("Invalid milestone index")
         ms = escrow.milestones[idx]
         if ms.status in ("paid", "refunded", "split"):
             raise gl.vm.UserError("Milestone already settled")
@@ -378,6 +382,8 @@ class PraetorV2(gl.Contract):
             raise gl.vm.UserError("Escrow already completed")
 
         idx = int(milestone_index)
+        if idx < 0 or idx >= len(escrow.milestones):
+            raise gl.vm.UserError("Invalid milestone index")
         ms = escrow.milestones[idx]
         if ms.status in ("paid", "refunded", "split"):
             raise gl.vm.UserError("Milestone already settled")
@@ -430,7 +436,9 @@ class PraetorV2(gl.Contract):
             raise gl.vm.UserError("Only freelancer can verify")
 
         idx = int(milestone_index)
-        if escrow.milestones[idx].status in ("paid", "refunded", "split"):
+        if idx < 0 or idx >= len(escrow.milestones):
+            raise gl.vm.UserError("Invalid milestone index")
+        if escrow.milestones[idx].status in ("paid", "refunded", "split", "verified"):
             raise gl.vm.UserError("Milestone already settled")
 
         def leader_fn() -> dict:
