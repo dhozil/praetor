@@ -438,3 +438,37 @@ def test_evidence_cannot_overwrite_verified_milestone(contract, reset):
     with vm.prank(freelancer):
         with vm.expect_revert("already settled"):
             c.submit_evidence(0, 0, "https://new.example")
+
+
+# ── 5. Job lifecycle status must reach "completed" for history ───────────────
+
+
+def test_job_becomes_completed_after_full_payment(contract, reset):
+    """The History page lists jobs whose status is 'completed'. The job
+    posting must transition open -> assigned -> completed when the escrow
+    finishes paying out, otherwise history stays empty forever."""
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    assert c.get_job(job_id).status == "assigned"
+
+    _submit_and_verify(vm, c, 0, freelancer)
+    with vm.prank(client):
+        c.release_payment(0, 0)
+
+    assert c.get_escrow(0).status == "completed"
+    assert c.get_job(job_id).status == "completed"
+
+
+def test_completed_job_indexed_for_both_parties(contract, reset):
+    """get_client_jobs / get_freelancer_jobs must both return the job id once
+    the escrow is completed, so History works on both sides."""
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    _submit_and_verify(vm, c, 0, freelancer)
+    with vm.prank(client):
+        c.release_payment(0, 0)
+
+    assert job_id in c.get_client_jobs(str(client))
+    assert job_id in c.get_freelancer_jobs(str(freelancer))

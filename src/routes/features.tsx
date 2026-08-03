@@ -1640,9 +1640,10 @@ function HistoryDemo() {
       const list: any[] = (await Promise.all(ids.map(async (id) => {
         try {
           const job = await getJob(id);
-          if (job.status === "completed") {
-            let escrow = null;
-            try { escrow = await getEscrow(id); } catch {}
+          const escrowId = await getEscrowByJob(id);
+          if (escrowId === null) return null;
+          const escrow = await getEscrow(escrowId);
+          if (escrow && escrow.status === "completed") {
             return { ...job, jobId: id, escrow };
           }
         } catch {}

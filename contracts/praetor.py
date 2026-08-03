@@ -414,6 +414,9 @@ class PraetorV2(gl.Contract):
                 break
         if all_paid:
             escrow.status = "completed"
+            job = self.job_postings[escrow.job_id]
+            job.status = "completed"
+            self.job_postings[escrow.job_id] = job
 
         self.escrows[escrow_id] = escrow
         self._log_event("payment_released", escrow_id,
