@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from genlayer.test import VMContext, deploy_contract, create_address
+from gltest.direct import VMContext, deploy_contract, create_address
 
 CONTRACT = Path(__file__).resolve().parent.parent / "contracts" / "praetor.py"
 
@@ -24,11 +24,24 @@ VALIDATOR_PASS = '{"passed": true, "score": 90, "reasoning": "evidence proves wo
 VALIDATOR_FAIL = '{"passed": false, "score": 20, "reasoning": "no credible evidence"}'
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def contract():
-    with VMContext() as vm:
-        c = deploy_contract(CONTRACT, vm, args=[2])  # 2% platform fee
+    # The GenLayer runtime allows only ONE contract class definition per
+    # process, so we deploy once for the whole session and reset state.
+    vm = VMContext()
+    c = deploy_contract(CONTRACT, vm, 2)  # 2% platform fee
+    with vm.activate():
         yield vm, c
+
+
+@pytest.fixture
+def reset(contract):
+    vm, c = contract
+    snap = vm.snapshot()
+    yield
+    vm.revert(snap)
+    vm.clear_mocks()
+    vm.clear_validators()
 
 
 def _funded_escrow(vm, c):
@@ -37,6 +50,7 @@ def _funded_escrow(vm, c):
     freelancer = create_address("freelancer")
 
     with vm.prank(client):
+        vm.value = 100_000
         vm.mock_web("evidence.example", {"status": 200, "body": "work done here"})
         job_id = c.post_job(
             "Build DApp",
@@ -48,6 +62,7 @@ def _funded_escrow(vm, c):
             "Working code",
         )
         c.assign_freelancer(job_id, str(freelancer))
+        vm.value = 0
     return job_id, client, freelancer
 
 
@@ -69,7 +84,7 @@ def _submit_and_verify(vm, c, escrow_id, freelancer):
 # ── 1. Authentication: only escrow parties may trigger a dispute ────────────
 
 
-def test_dispute_rejects_arbitrary_caller(contract):
+def test_dispute_rejects_arbitrary_caller(contract, reset):
     vm, c = contract
     job_id, client, freelancer = _funded_escrow(vm, c)
     stranger = create_address("stranger")
@@ -81,7 +96,7 @@ def test_dispute_rejects_arbitrary_caller(contract):
             )
 
 
-def test_verify_only_by_freelancer(contract):
+def test_verify_only_by_freelancer(contract, reset):
     vm, c = contract
     job_id, client, freelancer = _funded_escrow(vm, c)
     intruder = create_address("intruder")
@@ -94,7 +109,7 @@ def test_verify_only_by_freelancer(contract):
             )
 
 
-def test_release_only_by_client(contract):
+def test_release_only_by_client(contract, reset):
     vm, c = contract
     job_id, client, freelancer = _funded_escrow(vm, c)
 
@@ -106,7 +121,7 @@ def test_release_only_by_client(contract):
 # ── 2. One-time settlement guards ───────────────────────────────────────────
 
 
-def test_cannot_release_unverified(contract):
+def test_cannot_release_unverified(contract, reset):
     vm, c = contract
     job_id = _funded_escrow(vm, c)[0]
 
@@ -115,7 +130,7 @@ def test_cannot_release_unverified(contract):
             c.release_payment(0, 0)
 
 
-def test_freelancer_win_marks_verified_then_releasable_once(contract):
+def test_freelancer_win_marks_verified_then_releasable_once(contract, reset):
     vm, c = contract
     job_id, client, freelancer = _funded_escrow(vm, c)
 
@@ -134,12 +149,14 @@ def test_freelancer_win_marks_verified_then_releasable_once(contract):
     assert c.get_escrow(0).milestones[0].status == "paid"
 
     # Second release must be blocked -> funds are never double-paid.
+    # (With a single milestone, the first release completes the escrow, so the
+    # completed-guard fires before the already-paid check.)
     with vm.prank(client):
-        with vm.expect_revert("already paid"):
+        with vm.expect_revert("completed"):
             c.release_payment(0, 0)
 
 
-def test_settled_milestone_cannot_be_disputed_again(contract):
+def test_settled_milestone_cannot_be_disputed_again(contract, reset):
     vm, c = contract
     job_id, client, freelancer = _funded_escrow(vm, c)
 
@@ -160,7 +177,7 @@ def test_settled_milestone_cannot_be_disputed_again(contract):
             )
 
 
-def test_paid_milestone_cannot_be_verified_again(contract):
+def test_paid_milestone_cannot_be_verified_again(contract, reset):
     vm, c = contract
     job_id, client, freelancer = _funded_escrow(vm, c)
 
@@ -170,7 +187,7 @@ def test_paid_milestone_cannot_be_verified_again(contract):
 
     # Re-verifying after payment is blocked -> no retroactive payout edits.
     with vm.prank(freelancer):
-        with vm.expect_revert("already paid"):
+        with vm.expect_revert("completed"):
             c.verify_milestone(
                 0, 0, ["https://evidence.example"], ["Link"],
                 "Build DApp", "Milestone 1", "Core features",
@@ -191,7 +208,7 @@ EURO = 100_000
         (90, "client"),         # ≥ 67 -> client refund
     ],
 )
-def test_verdict_classifications_map_to_terminal_states(contract, share, expected):
+def test_verdict_classifications_map_to_terminal_states(contract, reset, share, expected):
     vm, c = contract
     job_id, client, freelancer = _funded_escrow(vm, c)
 

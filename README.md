@@ -152,11 +152,14 @@ genlayer deploy --contract contracts/praetor.py --rpc https://studio.genlayer.co
 
 ### Contract Tests
 
-Direct-mode (in-memory) pytest suite covering the fund-transition guards:
+Direct-mode (in-memory) pytest suite covering the fund-transition guards. Requires Python 3.12+ and the `genlayer-test` suite:
 
 ```bash
-pip install "genlayer-test[sim]"
-python -m pytest tests/test_praetor.py -v
+python -m venv .venv
+.venv\Scripts\pip install "genlayer-test[sim]"   # Windows
+.venv/bin/pip install "genlayer-test[sim]"        # Linux/macOS
+.venv\Scripts\python -m pytest tests/test_praetor.py -v   # Windows
+.venv/bin/python -m pytest tests/test_praetor.py -v        # Linux/macOS
 ```
 
 ---
