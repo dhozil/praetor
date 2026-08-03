@@ -360,6 +360,8 @@ class PraetorV2(gl.Contract):
 
         idx = int(milestone_index)
         ms = escrow.milestones[idx]
+        if ms.status in ("paid", "refunded", "split"):
+            raise gl.vm.UserError("Milestone already settled")
         ms.evidence_url = evidence_url
         ms.status = "evidence_submitted"
         escrow.milestones[idx] = ms
@@ -377,8 +379,8 @@ class PraetorV2(gl.Contract):
 
         idx = int(milestone_index)
         ms = escrow.milestones[idx]
-        if ms.status == "paid":
-            raise gl.vm.UserError("Milestone already paid")
+        if ms.status in ("paid", "refunded", "split"):
+            raise gl.vm.UserError("Milestone already settled")
         if not ms.verified:
             raise gl.vm.UserError("Milestone not verified yet")
 
@@ -428,8 +430,8 @@ class PraetorV2(gl.Contract):
             raise gl.vm.UserError("Only freelancer can verify")
 
         idx = int(milestone_index)
-        if escrow.milestones[idx].status == "paid":
-            raise gl.vm.UserError("Milestone already paid")
+        if escrow.milestones[idx].status in ("paid", "refunded", "split"):
+            raise gl.vm.UserError("Milestone already settled")
 
         def leader_fn() -> dict:
             evidence_details = ""

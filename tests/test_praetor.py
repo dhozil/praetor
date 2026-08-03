@@ -150,7 +150,7 @@ def test_freelancer_win_marks_verified_then_releasable_once(contract, reset):
 
     # Second release must be blocked -> funds are never double-paid.
     # (With a single milestone, the first release completes the escrow, so the
-    # completed-guard fires before the already-paid check.)
+    # escrow-completed guard fires first.)
     with vm.prank(client):
         with vm.expect_revert("completed"):
             c.release_payment(0, 0)
@@ -175,6 +175,50 @@ def test_settled_milestone_cannot_be_disputed_again(contract, reset):
             c.resolve_dispute(
                 0, 0, "again", [], "again", []
             )
+
+
+def test_refunded_milestone_cannot_be_released_or_reverified(contract, reset):
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    with vm.prank(freelancer):
+        vm.mock_llm("dispute resolver", '{"client_share": 100, "reasoning": "refund"}')
+        verdict = c.resolve_dispute(
+            0, 0, "no work done", "nothing delivered", "done", "see link"
+        )
+    assert verdict == "client"
+    assert c.get_escrow(0).milestones[0].status == "refunded"
+
+    # Even after refund, the client cannot pull the funds again.
+    with vm.prank(client):
+        with vm.expect_revert("already settled"):
+            c.release_payment(0, 0)
+
+    # And the freelancer cannot re-verify to flip it back to payable.
+    with vm.prank(freelancer):
+        with vm.expect_revert("already settled"):
+            c.verify_milestone(
+                0, 0, ["https://evidence.example"], ["Link"],
+                "Build DApp", "Milestone 1", "Core features",
+            )
+
+
+def test_split_milestone_cannot_be_released(contract, reset):
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    with vm.prank(freelancer):
+        vm.mock_llm("dispute resolver", '{"client_share": 50, "reasoning": "split"}')
+        verdict = c.resolve_dispute(
+            0, 0, "partial", [], "partial", []
+        )
+    assert verdict == "split"
+    assert c.get_escrow(0).milestones[0].status == "split"
+
+    # Split already paid both parties on-chain, no further release possible.
+    with vm.prank(client):
+        with vm.expect_revert("already settled"):
+            c.release_payment(0, 0)
 
 
 def test_paid_milestone_cannot_be_verified_again(contract, reset):
