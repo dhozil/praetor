@@ -240,6 +240,8 @@ class PraetorV2(gl.Contract):
         if job.status != "open":
             raise gl.vm.UserError("Job is not open")
         sender = gl.message.sender_address
+        if sender == job.client:
+            raise gl.vm.UserError("Client cannot apply to their own job")
         for a in job.applicants:
             if a == sender:
                 raise gl.vm.UserError("Already applied")
@@ -256,6 +258,8 @@ class PraetorV2(gl.Contract):
             raise gl.vm.UserError("Only client can assign")
 
         freelancer = Address(freelancer_address)
+        if freelancer == job.client:
+            raise gl.vm.UserError("Cannot assign the client as freelancer")
 
         # Create escrow from job
         escrow_id = self._create_escrow_from_job(job, freelancer, job_id)
@@ -472,6 +476,29 @@ class PraetorV2(gl.Contract):
         if committed_url == "":
             raise gl.vm.UserError("No evidence committed — call submit_evidence first")
 
+        def parse_verdict(res) -> tuple:
+            # Robust coercion: the LLM may return "passed" as a string
+            # ("false") or a number (1/0). Naive bool("false") == True would
+            # flip a FAIL into a PASS, so parse strictly.
+            passed = res.get("passed", False)
+            if isinstance(passed, bool):
+                pb = passed
+            elif isinstance(passed, (int, float)):
+                pb = passed != 0
+            elif isinstance(passed, str):
+                pb = passed.strip().lower() in ("true", "1", "yes")
+            else:
+                pb = False
+            raw = res.get("score", 0)
+            try:
+                score = int(raw)
+            except (TypeError, ValueError):
+                try:
+                    score = int(float(raw))
+                except (TypeError, ValueError):
+                    score = 0
+            return pb, max(0, min(100, score))
+
         def leader_fn() -> dict:
             evidence_details = ""
             try:
@@ -507,10 +534,11 @@ Respond ONLY as JSON:
 """
             res = gl.nondet.exec_prompt(prompt, response_format="json")
             if not isinstance(res, dict):
-                raise gl.UserError("Invalid LLM response")
+                raise gl.vm.UserError("Invalid LLM response")
+            passed, score = parse_verdict(res)
             return {
-                "passed": bool(res.get("passed", False)),
-                "score": max(0, min(100, int(res.get("score", 0)))),
+                "passed": passed,
+                "score": score,
                 "reasoning": str(res.get("reasoning", "")),
             }
 
@@ -620,7 +648,10 @@ Respond ONLY as JSON:
             case.freelancer_submitted = True
 
         self.dispute_cases[key] = case
-        escrow.dispute_open = True
+        # The dispute is only "open" once BOTH sides have committed a case —
+        # a one-sided submission must not leave a stuck flag (e.g. if the
+        # freelancer later verifies and pays out, no orphaned dispute state).
+        escrow.dispute_open = case.client_submitted and case.freelancer_submitted
         self.escrows[escrow_id] = escrow
         self._log_event("dispute_case_submitted", escrow_id,
                         f"Dispute case #{escrow_id}/{milestone_index} submitted")
@@ -707,6 +738,16 @@ Respond ONLY as JSON:
                 return "freelancer"
             return "split"
 
+        def parse_share(res) -> int:
+            raw = res.get("client_share", 50)
+            try:
+                return max(0, min(100, int(raw)))
+            except (TypeError, ValueError):
+                try:
+                    return max(0, min(100, int(float(raw))))
+                except (TypeError, ValueError):
+                    return 50
+
         def leader_fn() -> dict:
             work_section = "WORK CONTENT: none"
             if work_evidence:
@@ -738,8 +779,8 @@ Respond ONLY as JSON:
 """
             res = gl.nondet.exec_prompt(prompt, response_format="json")
             if not isinstance(res, dict):
-                raise gl.UserError("Invalid response")
-            share = max(0, min(100, int(res.get("client_share", 50))))
+                raise gl.vm.UserError("Invalid response")
+            share = parse_share(res)
             return {
                 "client_share": share,
                 "verdict": classify(share),

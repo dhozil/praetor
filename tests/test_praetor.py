@@ -125,6 +125,38 @@ def test_release_only_by_client(contract, reset):
             c.release_payment(0, 0)
 
 
+def test_client_cannot_apply_own_job(contract, reset):
+    vm, c = contract
+    client = create_address("client")
+
+    with vm.prank(client):
+        vm.value = 100_000
+        job_id = c.post_job(
+            "Build DApp", "Deliver working dApp",
+            ["Milestone 1"], ["Core features"], [100_000], ["Link"], "Working code",
+        )
+        with vm.expect_revert("Client cannot apply"):
+            c.apply_job(job_id)
+        vm.value = 0
+
+
+def test_cannot_self_assign(contract, reset):
+    """Client assigning themself as freelancer would create an escrow where a
+    single wallet is both parties — that dispute can never be adjudicated."""
+    vm, c = contract
+    client = create_address("client")
+
+    with vm.prank(client):
+        vm.value = 100_000
+        job_id = c.post_job(
+            "Build DApp", "Deliver working dApp",
+            ["Milestone 1"], ["Core features"], [100_000], ["Link"], "Working code",
+        )
+        with vm.expect_revert("Cannot assign the client"):
+            c.assign_freelancer(job_id, str(client))
+        vm.value = 0
+
+
 # ── 2. Verification is bound to committed evidence ──────────────────────────
 
 
@@ -174,6 +206,30 @@ def test_validator_approves_same_category_within_tolerance(contract, reset):
     assert vm.run_validator() is True
 
 
+def test_verify_coerces_string_booleans_safely(contract, reset):
+    """A malicious/glitchy LLM response with "passed": "false" as a STRING must
+    be treated as FAIL — naive bool("false") would be True and flip a rejection
+    into an approval."""
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    with vm.prank(freelancer):
+        c.submit_evidence(0, 0, "https://evidence.example")
+        vm.mock_llm("milestone verifier", '{"passed": "false", "score": 90, "reasoning": "x"}')
+        c.verify_milestone(0, 0)
+
+    assert c.get_verification(0, 0).passed is False
+    assert c.get_escrow(0).milestones[0].status == "rejected"
+
+    # And "passed": 1 (int) must be accepted as pass.
+    vm.clear_mocks()
+    with vm.prank(freelancer):
+        c.submit_evidence(0, 0, "https://evidence.example")
+        vm.mock_llm("milestone verifier", '{"passed": 1, "score": 75, "reasoning": "y"}')
+        c.verify_milestone(0, 0)
+    assert c.get_verification(0, 0).passed is True
+
+
 # ── 3. Per-party dispute cases ──────────────────────────────────────────────
 
 
@@ -193,6 +249,26 @@ def test_dispute_case_bound_to_submitter(contract, reset):
     with vm.prank(freelancer):
         with vm.expect_revert("already submitted"):
             c.submit_dispute_case(0, 0, "edited position", [])
+
+
+def test_dispute_open_only_when_both_cases(contract, reset):
+    """A one-sided case submission must not leave the escrow flagged as having
+    an open dispute (which could get stuck if the other party never submits
+    and the milestone later gets verified and paid)."""
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    _submit_case(vm, c, 0, 0, client, "client position")
+    assert c.get_escrow(0).dispute_open is False
+
+    _submit_case(vm, c, 0, 0, freelancer, "freelancer position")
+    assert c.get_escrow(0).dispute_open is True
+
+    # After resolution the flag is cleared again.
+    with vm.prank(freelancer):
+        vm.mock_llm("dispute resolver", VALIDATOR_DISPUTE)
+        c.resolve_dispute(0, 0)
+    assert c.get_escrow(0).dispute_open is False
 
 
 def test_resolve_requires_both_cases(contract, reset):
