@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ShieldCheck,
   FileSearch,
@@ -836,6 +836,11 @@ const evidenceTypes = [
 function VerifyDemo() {
   const { account, connected } = useWallet();
 
+  // Synchronous re-entry lock: setState is async, so canVerify's
+  // `!state.includes("verifying")` is stale until the next render — a rapid
+  // double-click could otherwise fire two identical submit_evidence txs.
+  const verifyingRef = useRef(false);
+
   const [escrowId, setEscrowId] = useState("");
   const [milestoneIndex, setMilestoneIndex] = useState("0");
   const [jobDescription, setJobDescription] = useState("");
@@ -908,30 +913,35 @@ function VerifyDemo() {
   };
 
   const verify = async () => {
-    if (!canVerify || !account) return;
+    if (verifyingRef.current || !canVerify || !account) return;
+    verifyingRef.current = true;
     setState("verifying");
     setCurrentStep(0);
     setErrorMsg("");
     setResult(null);
 
-    // Animate through AI steps
-    for (let i = 0; i <= AI_STEPS.length; i++) {
-      await new Promise((r) => setTimeout(r, 1200));
-      setCurrentStep(i);
-      if (i === AI_STEPS.length) break;
-    }
-
     try {
+      // Animate through AI steps
+      for (let i = 0; i <= AI_STEPS.length; i++) {
+        await new Promise((r) => setTimeout(r, 1200));
+        setCurrentStep(i);
+        if (i === AI_STEPS.length) break;
+      }
+
       // 1) Commit evidence on-chain FIRST — verification is bound to the
       // committed evidence. Only the last URL evaluated by the AI verifier.
       const primary = items[items.length - 1];
       const evTx = await submitEvidence(account, BigInt(escrowId), BigInt(milestoneIndex), primary.url);
-      await waitForReceipt(evTx);
+      // Best-effort wait: if the RPC poller gets rate-limited, DON'T abort —
+      // same-sender txs execute in nonce order, so the verify below still runs
+      // after the evidence commits on-chain. Wait again for evTx at the end.
+      await waitForReceipt(evTx).catch(() => {});
       invalidateAllCache();
 
       // 2) Verify against the on-chain committed evidence.
       const txHash = await verifyMilestone(account!, BigInt(escrowId), BigInt(milestoneIndex));
       await waitForReceipt(txHash);
+      await waitForReceipt(evTx).catch(() => {});
 
       // Fetch verification result from contract
       const v = await getVerification(BigInt(escrowId), BigInt(milestoneIndex));
@@ -943,6 +953,8 @@ function VerifyDemo() {
       const cause = e?.cause?.message || e?.cause || "";
       setErrorMsg(cause.includes("reverted") ? cause : msg);
       setState("failed");
+    } finally {
+      verifyingRef.current = false;
     }
   };
 

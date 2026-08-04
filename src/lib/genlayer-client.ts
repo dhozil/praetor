@@ -584,21 +584,29 @@ export async function waitForReceipt(
   txHash: string,
   status: TransactionStatus = TransactionStatus.FINALIZED,
 ) {
-  try {
-    const receipt = await readClient.waitForTransactionReceipt({
-      hash: txHash as any,
-      status,
-      interval: 4000,
-      retries: 20,
-    });
-    return receipt;
-  } catch (e: any) {
-    const msg = e?.message || e?.cause || "";
-    if (msg.toLowerCase().includes("rate limit")) {
-      throw new Error("GenLayer RPC rate limit reached (5000 requests/day). Tunggu reset harian lalu coba lagi.");
+  // Resilient to the Studio per-IP rate limit (60/min, 1000/hr, 5000+/day):
+  // genlayer-js's internal poller aborts on the first 429, so we retry the
+  // whole wait with backoff instead of throwing mid-flow.
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      return await readClient.waitForTransactionReceipt({
+        hash: txHash as any,
+        status,
+        interval: 4000,
+        retries: 10,
+      });
+    } catch (e: any) {
+      lastErr = e;
+      const msg = (e?.message || e?.cause || "").toLowerCase();
+      if (msg.includes("rate limit")) {
+        await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
+        continue;
+      }
+      throw e;
     }
-    throw e;
   }
+  throw new Error("GenLayer RPC rate limit reached — receipt belum terkonfirmasi. Periksa explorer, lalu klik Retry.");
 }
 
 export function openFaucet() {
