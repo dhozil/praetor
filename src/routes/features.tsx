@@ -27,6 +27,7 @@ import {
   Lightbulb,
   Binary,
   ScrollText,
+  Loader2,
 } from "lucide-react";
 import { RomanCandle } from "@/components/RomanCandle";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
@@ -852,6 +853,10 @@ function VerifyDemo() {
 
   const [state, setState] = useState<"idle" | "verifying" | "passed" | "failed">("idle");
   const [currentStep, setCurrentStep] = useState(0);
+  // Fine-grained progress while verify() is running: commit → wait → evaluate
+  const [verifyPhase, setVerifyPhase] = useState<"commit" | "wait" | "evaluate" | "">("");
+  const [evTxHash, setEvTxHash] = useState("");
+  const [verifyTxHash, setVerifyTxHash] = useState("");
   const [result, setResult] = useState<{ passed: boolean; score: number; reasoning: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -919,6 +924,9 @@ function VerifyDemo() {
     setCurrentStep(0);
     setErrorMsg("");
     setResult(null);
+    setVerifyPhase("");
+    setEvTxHash("");
+    setVerifyTxHash("");
 
     try {
       // Animate through AI steps
@@ -930,19 +938,25 @@ function VerifyDemo() {
 
       // 1) Commit evidence on-chain FIRST — verification is bound to the
       // committed evidence. All added URLs are committed and evaluated.
+      setVerifyPhase("commit");
       const evTx = await submitEvidence(account, BigInt(escrowId), BigInt(milestoneIndex), items.map((i) => i.url));
+      setEvTxHash(evTx);
       // Best-effort wait: if the RPC poller gets rate-limited, DON'T abort —
       // same-sender txs execute in nonce order, so the verify below still runs
       // after the evidence commits on-chain. Wait again for evTx at the end.
+      setVerifyPhase("wait");
       await waitForReceipt(evTx).catch(() => {});
       invalidateAllCache();
 
       // 2) Verify against the on-chain committed evidence.
+      setVerifyPhase("evaluate");
       const txHash = await verifyMilestone(account!, BigInt(escrowId), BigInt(milestoneIndex));
+      setVerifyTxHash(txHash);
       await waitForReceipt(txHash);
       await waitForReceipt(evTx).catch(() => {});
 
       // Fetch verification result from contract
+      setVerifyPhase("");
       const v = await getVerification(BigInt(escrowId), BigInt(milestoneIndex));
       setResult({ passed: v.passed, score: v.score, reasoning: v.reasoning });
       setState(v.passed ? "passed" : "failed");
@@ -1003,6 +1017,42 @@ function VerifyDemo() {
             </div>
           </div>
 
+          {state === "verifying" && (
+            <div className="rounded-xl border border-gold/20 bg-gold/[0.03] p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-gold" />
+                <div className="text-xs font-medium text-marble">
+                  {verifyPhase === "commit" || verifyPhase === "wait"
+                    ? "Committing evidence on-chain…"
+                    : verifyPhase === "evaluate"
+                      ? "AI validators evaluating evidence…"
+                      : "Preparing evidence…"}
+                </div>
+              </div>
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                <div className="flex items-center justify-between">
+                  <span>1. Evidence tx</span>
+                  {evTxHash ? (
+                    <a href={`https://explorer-studio.genlayer.com/tx/${evTxHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-marble underline underline-offset-2">{evTxHash.slice(0, 12)}…</a>
+                  ) : (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>2. Verification tx</span>
+                  {verifyTxHash ? (
+                    <a href={`https://explorer-studio.genlayer.com/tx/${verifyTxHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-marble underline underline-offset-2">{verifyTxHash.slice(0, 12)}…</a>
+                  ) : (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  )}
+                </div>
+              </div>
+              <div className="text-[10px] text-muted-foreground">Verifikasi butuh konfirmasi blok di GenLayer — hasil muncul setelah proses selesai.</div>
+            </div>
+          )}
+
+          {state !== "verifying" && (
+            <>
           {/* Escrow selection — dropdown picker */}
           <div className="rounded-xl border border-gold/20 p-4 space-y-3">
             <div className="text-xs uppercase tracking-[0.25em] text-gold-soft">1. Select escrow</div>
@@ -1135,10 +1185,10 @@ function VerifyDemo() {
 
           {!connected && <div className="rounded-lg border border-gold/20 bg-gold/5 p-2 text-xs text-gold-soft text-center">Connect wallet to verify</div>}
 
-          <button onClick={verify} disabled={!canVerify || state === "verifying" || state === "passed"}
+          <button onClick={verify} disabled={!canVerify || state === "passed"}
             className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {state === "verifying" ? "AI deliberating…" : state === "passed" ? "✓ Milestone approved" : state === "failed" ? "Retry" : "Verify with GenLayer AI"}
+            {state === "passed" ? "✓ Milestone approved" : state === "failed" ? "Retry" : "Verify with GenLayer AI"}
           </button>
 
           {result && (
@@ -1154,6 +1204,8 @@ function VerifyDemo() {
           )}
 
           {errorMsg && <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{errorMsg}</div>}
+            </>
+          )}
         </div>
       }
       right={
@@ -1610,6 +1662,22 @@ function DisputeDemo() {
                   {loading ? "AI deliberating…" : "Verify & resolve dispute"}
                 </button>
               )}
+            </div>
+          )}
+
+          {step === "resolving" && (
+            <div className="rounded-xl border border-gold/20 bg-gold/[0.03] p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-gold" />
+                <div className="text-xs font-medium text-marble">AI deliberating — menunggu konfirmasi on-chain…</div>
+              </div>
+          {txHash && step !== "resolving" && (
+                <div className="text-xs space-y-1">
+                  <div className="text-gold-soft uppercase tracking-wider">Resolve tx</div>
+                  <a href={`https://explorer-studio.genlayer.com/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-marble underline underline-offset-2 break-all">{txHash.slice(0, 20)}…{txHash.slice(-8)}</a>
+                </div>
+              )}
+              <div className="text-[10px] text-muted-foreground">Verdict diterapkan on-chain setelah konfirmasi blok — hasil muncul otomatis setelah selesai.</div>
             </div>
           )}
 
