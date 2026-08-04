@@ -582,9 +582,13 @@ export async function getTotalEvents(): Promise<bigint> {
 
 export async function waitForReceipt(
   txHash: string,
-  status: TransactionStatus = TransactionStatus.FINALIZED,
+  status: TransactionStatus = TransactionStatus.ACCEPTED,
 ) {
-  // Resilient to the Studio per-IP rate limit (60/min, 1000/hr, 5000+/day):
+  // Studio JSON-RPC reports an executed tx as ACCEPTED (status 5) — it never
+  // advances to FINALIZED (7), even though the explorer shows it finalized.
+  // Waiting for ACCEPTED is correct (tx decided + included in a block), and
+  // genlayer-js treats any decided state as done in this mode.
+  // Also resilient to the Studio per-IP rate limit (60/min, 1000/hr, 5000+/day):
   // genlayer-js's internal poller aborts on the first 429, so we retry the
   // whole wait with backoff instead of throwing mid-flow.
   let lastErr: any = null;
@@ -599,7 +603,8 @@ export async function waitForReceipt(
     } catch (e: any) {
       lastErr = e;
       const msg = (e?.message || e?.cause || "").toLowerCase();
-      if (msg.includes("rate limit")) {
+      // "not found" = tx belum terindex RPC sesaat setelah dikirim — retry.
+      if (msg.includes("rate limit") || msg.includes("not found")) {
         await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
         continue;
       }
