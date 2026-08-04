@@ -47,11 +47,13 @@ import {
   getEscrowByJob,
   verifyMilestone,
   getVerification,
-  getDisputeByEscrowFresh,
+  getDisputeByEscrowMilestoneFresh,
   getDisputeCounterFresh,
   getDisputeFresh,
   releasePayment,
   resolveDispute,
+  submitDisputeCase,
+  getDisputeCase,
   waitForReceipt,
   submitEvidence,
   registerUser,
@@ -921,15 +923,11 @@ function VerifyDemo() {
     }
 
     try {
-      const txHash = await verifyMilestone(account!, {
-        escrowId: BigInt(escrowId),
-        milestoneIndex: BigInt(milestoneIndex),
-        evidenceUrls: items.map((i) => i.url),
-        evidenceTypes: items.map((i) => i.type),
-        jobDescription,
-        milestoneTitle,
-        milestoneDescription,
-      });
+      const txHash = await verifyMilestone(
+        account!,
+        BigInt(escrowId),
+        BigInt(milestoneIndex),
+      );
 
       await waitForReceipt(txHash);
 
@@ -1346,10 +1344,6 @@ function DisputeDemo() {
 
   const [escrowId, setEscrowId] = useState("");
   const [milestoneIdx, setMilestoneIdx] = useState("");
-  const [clientStmt, setClientStmt] = useState("");
-  const [freelancerStmt, setFreelancerStmt] = useState("");
-  const [clientEvidence, setClientEvidence] = useState("");
-  const [freelancerEvidence, setFreelancerEvidence] = useState("");
   const [clientAddr, setClientAddr] = useState("");
   const [freelancerAddr, setFreelancerAddr] = useState("");
   // Composite key "escrowId:milestoneIdx" for dropdown value
@@ -1388,16 +1382,31 @@ function DisputeDemo() {
   }, [account]);
 
   const [disputeVerification, setDisputeVerification] = useState<any>(null);
+  const [caseStatus, setCaseStatus] = useState<any>(null);
+  const [myStmt, setMyStmt] = useState("");
+  const [myEvidence, setMyEvidence] = useState("");
 
-  const selectDisputeEscrow = (escrow: any, msIdx: number) => {
+  const selectDisputeEscrow = async (escrow: any, msIdx: number) => {
     setEscrowId(escrow.escrowId.toString());
     setMilestoneIdx(msIdx.toString());
     setClientAddr(escrow.client || "");
     setFreelancerAddr(escrow.freelancer || "");
+    setMyStmt(""); setMyEvidence("");
     getVerification(escrow.escrowId, BigInt(msIdx)).then(setDisputeVerification).catch(() => setDisputeVerification(null));
+    try {
+      const cs: any = await getDisputeCase(escrow.escrowId, BigInt(msIdx));
+      setCaseStatus(cs);
+    } catch { setCaseStatus(null); }
   };
 
-  const canResolve = escrowId.trim().length > 0 && clientStmt.trim().length > 0 && freelancerStmt.trim().length > 0 && connected;
+  const myRole: "client" | "freelancer" | null =
+    !account ? null : account.toLowerCase() === (clientAddr || "").toLowerCase() ? "client"
+      : account.toLowerCase() === (freelancerAddr || "").toLowerCase() ? "freelancer" : null;
+
+  const myCaseSubmitted = caseStatus && myRole ? !!caseStatus[`${myRole}_submitted`] : false;
+
+  const canSubmitCase = escrowId.trim().length > 0 && myRole !== null && myStmt.trim().length > 0 && !myCaseSubmitted && connected;
+  const canResolve = escrowId.trim().length > 0 && caseStatus?.client_submitted && caseStatus?.freelancer_submitted && connected;
 
   const [resolution, setResolution] = useState<any>(null);
   const [txHash, setTxHash] = useState("");
@@ -1405,18 +1414,41 @@ function DisputeDemo() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const refreshCaseStatus = async () => {
+    if (!escrowId) return;
+    try {
+      const cs: any = await getDisputeCase(BigInt(escrowId), BigInt(milestoneIdx || "0"));
+      setCaseStatus(cs);
+    } catch { /* */ }
+  };
+
+  const handleSubmitCase = async () => {
+    if (!canSubmitCase || !account) return;
+    setError(""); setLoading(true);
+    try {
+      const hash = await submitDisputeCase(
+        account,
+        BigInt(escrowId),
+        BigInt(milestoneIdx || "0"),
+        myStmt,
+        myEvidence.trim() ? [myEvidence.trim()] : [],
+      );
+      setTxHash(hash);
+      await waitForReceipt(hash);
+      invalidateAllCache();
+      await refreshCaseStatus();
+    } catch (e: any) { setError(e?.shortMessage || e?.message || "Case submission failed"); }
+    finally { setLoading(false); }
+  };
+
   const handleResolve = async () => {
     if (!canResolve || !account) return;
-    setError(""); setLoading(true);
+    setError(""); setLoading(true); setStep("resolving");
     try {
       const hash = await resolveDispute(
         account,
         BigInt(escrowId),
         BigInt(milestoneIdx || "0"),
-        clientStmt,
-        clientEvidence.trim() ? [clientEvidence.trim()] : [],
-        freelancerStmt,
-        freelancerEvidence.trim() ? [freelancerEvidence.trim()] : [],
       );
       setTxHash(hash);
       await waitForReceipt(hash);
@@ -1426,16 +1458,16 @@ function DisputeDemo() {
       let d: any = null;
       for (let attempt = 0; attempt < 30 && !d; attempt++) {
         try {
-          const did = await getDisputeByEscrowFresh(BigInt(escrowId));
+          const did = await getDisputeByEscrowMilestoneFresh(BigInt(escrowId), BigInt(milestoneIdx || "0"));
           if (did !== null) {
             d = await getDisputeFresh(did);
           } else {
-            // Fallback: scan recent disputes for this escrow
+            // Fallback: scan recent disputes for this escrow + milestone
             const c = await getDisputeCounterFresh();
             if (c > 0n) {
               for (let i = Number(c) - 1; i >= 0; i--) {
                 const cand = await getDisputeFresh(BigInt(i));
-                if (cand && cand.escrow_id?.toString() === escrowId && cand.resolved) {
+                if (cand && cand.escrow_id?.toString() === escrowId && Number(cand.milestone_index) === parseInt(milestoneIdx || "0") && cand.resolved) {
                   d = cand;
                   break;
                 }
@@ -1451,13 +1483,13 @@ function DisputeDemo() {
         setResolution({ verdict: "", reasoning: "Verdict stored on-chain. Check the explorer for tx below." });
       }
       setStep("done");
-    } catch (e: any) { setError(e?.shortMessage || e?.message || "Resolve failed"); }
+    } catch (e: any) { setError(e?.shortMessage || e?.message || "Resolve failed"); setStep("form"); }
     finally { setLoading(false); }
   };
 
   const reset = () => {
-    setStep("form"); setEscrowId(""); setMilestoneIdx(""); setClientStmt(""); setFreelancerStmt("");
-    setClientEvidence(""); setFreelancerEvidence(""); setClientAddr(""); setFreelancerAddr("");
+    setStep("form"); setEscrowId(""); setMilestoneIdx(""); setMyStmt(""); setMyEvidence("");
+    setClientAddr(""); setFreelancerAddr(""); setCaseStatus(null);
     setTxHash(""); setDisputeVerification(null);
     setResolution(null); setError("");
   };
@@ -1517,11 +1549,20 @@ function DisputeDemo() {
                 )}
               </div>
 
-              {/* Selected escrow info */}
+              {/* Case status */}
               {escrowId && clientAddr && (
                 <div className="rounded-xl border border-gold/15 bg-black/10 p-3 text-xs text-muted-foreground">
-                  Client: <span className="font-mono text-marble">{clientAddr.slice(0, 6)}…{clientAddr.slice(-4)}</span>
-                  {" | "}Freelancer: <span className="font-mono text-marble">{freelancerAddr.slice(0, 6)}…{freelancerAddr.slice(-4)}</span>
+                  <div>
+                    Client: <span className="font-mono text-marble">{clientAddr.slice(0, 6)}…{clientAddr.slice(-4)}</span>
+                    {" "}{caseStatus?.client_submitted ? <span className="text-green-400">· case submitted ✓</span> : <span className="text-yellow-400">· case pending</span>}
+                  </div>
+                  <div>
+                    Freelancer: <span className="font-mono text-marble">{freelancerAddr.slice(0, 6)}…{freelancerAddr.slice(-4)}</span>
+                    {" "}{caseStatus?.freelancer_submitted ? <span className="text-green-400">· case submitted ✓</span> : <span className="text-yellow-400">· case pending</span>}
+                  </div>
+                  {myRole === null && connected && (
+                    <div className="mt-1.5 text-yellow-400">This wallet is not a party to this escrow — you can watch, but not submit or resolve.</div>
+                  )}
                 </div>
               )}
 
@@ -1536,35 +1577,41 @@ function DisputeDemo() {
                 </div>
               )}
 
-              {/* Statements + evidence */}
-              <div className="grid gap-4 md:grid-cols-2">
+              {/* My statement + evidence */}
+              {myRole !== null && !myCaseSubmitted ? (
                 <div className="space-y-2">
-                  <Field label="Client's statement">
-                    <textarea value={clientStmt} onChange={(e) => setClientStmt(e.target.value)} rows={4} placeholder="Explain the client's position…" className="input resize-none" />
+                  <Field label={`Your statement — as ${myRole === "client" ? "Client" : "Freelancer"} (${account!.slice(0, 6)}…${account!.slice(-4)})`}>
+                    <textarea value={myStmt} onChange={(e) => setMyStmt(e.target.value)} rows={4} placeholder="Explain your position…" className="input resize-none" />
                   </Field>
-                  <Field label="Client's evidence URL (optional)">
-                    <input value={clientEvidence} onChange={(e) => setClientEvidence(e.target.value)} className="input font-mono text-xs" placeholder="https://…" />
+                  <Field label="Your evidence URL (optional)">
+                    <input value={myEvidence} onChange={(e) => setMyEvidence(e.target.value)} className="input font-mono text-xs" placeholder="https://…" />
                   </Field>
+                  <button onClick={() => { const pick = examples[Math.floor(Math.random() * examples.length)]; setMyStmt(myRole === "client" ? pick.client : pick.freelancer); }} type="button" className="inline-flex items-center gap-2 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors">
+                    <Sparkles className="h-3.5 w-3.5" /> Random fill example
+                  </button>
+                  {!connected && <div className="rounded-lg border border-gold/20 bg-gold/5 p-2 text-xs text-gold-soft text-center">Connect the party wallet to submit its case</div>}
+                  <button onClick={handleSubmitCase} disabled={!canSubmitCase || loading} className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                    {loading ? "Submitting case…" : `Submit ${myRole === "client" ? "client" : "freelancer"} case on-chain`}
+                  </button>
                 </div>
-                <div className="space-y-2">
-                  <Field label="Freelancer's statement">
-                    <textarea value={freelancerStmt} onChange={(e) => setFreelancerStmt(e.target.value)} rows={4} placeholder="Explain the freelancer's position…" className="input resize-none" />
-                  </Field>
-                  <Field label="Freelancer's evidence URL (optional)">
-                    <input value={freelancerEvidence} onChange={(e) => setFreelancerEvidence(e.target.value)} className="input font-mono text-xs" placeholder="https://…" />
-                  </Field>
+              ) : myCaseSubmitted ? (
+                <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-3 text-xs text-green-400">
+                  ✓ Your case is committed on-chain and cannot be overwritten.
+                  {caseStatus?.client_submitted && caseStatus?.freelancer_submitted
+                    ? " Both parties submitted — you can now resolve."
+                    : " Waiting for the other party to submit their case…"}
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-xl border border-gold/20 bg-gold/5 p-3 text-xs text-muted-foreground">
+                  {connected ? "This wallet is not a party to this escrow — only the client or freelancer can submit a case." : "Connect a party wallet to submit its case."}
+                </div>
+              )}
 
-              <button onClick={() => { const pick = examples[Math.floor(Math.random() * examples.length)]; setClientStmt(pick.client); setFreelancerStmt(pick.freelancer); }} type="button" className="inline-flex items-center gap-2 rounded-lg border border-gold/20 px-3 py-1.5 text-xs text-gold-soft hover:bg-gold/5 transition-colors">
-                <Sparkles className="h-3.5 w-3.5" /> Random fill example
-              </button>
-
-              {!connected && <div className="rounded-lg border border-gold/20 bg-gold/5 p-2 text-xs text-gold-soft text-center">Connect wallet to resolve</div>}
-
-              <button onClick={handleResolve} disabled={!canResolve || loading} className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-                {loading ? "AI deliberating…" : "Verify & resolve dispute"}
-              </button>
+              {caseStatus?.client_submitted && caseStatus?.freelancer_submitted && (
+                <button onClick={handleResolve} disabled={loading} className="btn-gold w-full rounded-full py-3.5 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                  {loading ? "AI deliberating…" : "Verify & resolve dispute"}
+                </button>
+              )}
             </div>
           )}
 
@@ -1580,7 +1627,7 @@ function DisputeDemo() {
                 )}
                 <div className="text-xs text-muted-foreground text-center space-y-1">
                   {resolution.verdict === "freelancer" && (
-                    <p className="text-green-400">✓ Milestone verified — the client can now release payment from the <span className="font-medium">Release</span> tab.</p>
+                    <p className="text-green-400">✓ Milestone paid to freelancer atomically in the resolve transaction (after platform fee).</p>
                   )}
                   {resolution.verdict === "client" && (
                     <p className="text-destructive">Refunded to client — the milestone amount was returned on-chain.</p>
@@ -1614,8 +1661,8 @@ function DisputeDemo() {
             {step === "form" ? "Awaiting dispute" : step === "resolving" ? "AI deliberating" : "Resolved"}
           </div>
           <p className="mt-2 max-w-[200px] text-[10px] text-muted-foreground">
-            {step === "form" ? "Fill both statements and let AI verify both sides in one step." :
-             step === "resolving" ? "AI fetches both sources &amp; reasons, then renders a binding verdict." :
+            {step === "form" ? "Each party commits its own case; both must submit before AI adjudicates." :
+             step === "resolving" ? "AI fetches both committed cases &amp; reasons, then renders a binding verdict." :
              "Verdict applied on-chain. Result is stored permanently."}
           </p>
         </div>

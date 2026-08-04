@@ -241,28 +241,13 @@ export async function releasePayment(
 
 export async function verifyMilestone(
   walletAddress: string,
-  params: {
-    escrowId: bigint;
-    milestoneIndex: bigint;
-    evidenceUrls: string[];
-    evidenceTypes: string[];
-    jobDescription: string;
-    milestoneTitle: string;
-    milestoneDescription: string;
-  },
+  escrowId: bigint,
+  milestoneIndex: bigint,
 ): Promise<string> {
   const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "verify_milestone",
-    args: [
-      params.escrowId,
-      params.milestoneIndex,
-      params.evidenceUrls,
-      params.evidenceTypes,
-      params.jobDescription,
-      params.milestoneTitle,
-      params.milestoneDescription,
-    ],
+    args: [escrowId, milestoneIndex],
     value: BigInt(0),
   });
   return txHash as string;
@@ -270,26 +255,31 @@ export async function verifyMilestone(
 
 // ─── Dispute Write ──────────────────────────────────────────────────────────
 
+export async function submitDisputeCase(
+  walletAddress: string,
+  escrowId: bigint,
+  milestoneIndex: bigint,
+  statement: string,
+  evidenceUrls: string[],
+): Promise<string> {
+  const txHash = await getWriteClient(walletAddress).writeContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "submit_dispute_case",
+    args: [escrowId, milestoneIndex, statement, evidenceUrls],
+    value: BigInt(0),
+  });
+  return txHash as string;
+}
+
 export async function resolveDispute(
   walletAddress: string,
   escrowId: bigint,
   milestoneIndex: bigint,
-  clientStatement: string,
-  clientEvidence: string[],
-  freelancerStatement: string,
-  freelancerEvidence: string[],
 ): Promise<string> {
   const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "resolve_dispute",
-    args: [
-      escrowId,
-      milestoneIndex,
-      clientStatement,
-      clientEvidence,
-      freelancerStatement,
-      freelancerEvidence,
-    ],
+    args: [escrowId, milestoneIndex],
     value: BigInt(0),
   });
   return txHash as string;
@@ -479,15 +469,30 @@ export async function getDisputeFresh(disputeId: bigint): Promise<any> {
   return result;
 }
 
-export async function getDisputeByEscrowFresh(escrowId: bigint): Promise<bigint | null> {
+export async function getDisputeByEscrowMilestoneFresh(
+  escrowId: bigint,
+  milestoneIndex: bigint,
+): Promise<bigint | null> {
   const result = await readClient.readContract({
     address: PRAETOR_ADDRESS,
-    functionName: "get_dispute_by_escrow",
-    args: [escrowId],
+    functionName: "get_dispute_by_escrow_milestone",
+    args: [escrowId, milestoneIndex],
   });
   const val = result as bigint;
   if (val === 2n ** 256n - 1n) return null;
   return val;
+}
+
+export async function getDisputeCase(
+  escrowId: bigint,
+  milestoneIndex: bigint,
+): Promise<any> {
+  const result = await readClient.readContract({
+    address: PRAETOR_ADDRESS,
+    functionName: "get_dispute_case",
+    args: [escrowId, milestoneIndex],
+  });
+  return result;
 }
 
 export async function isVerified(

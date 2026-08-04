@@ -80,6 +80,18 @@ class DisputeStatement:
 
 @allow_storage
 @dataclass
+class DisputeCase:
+    """Per-milestone dispute case, filled by each escrow party itself."""
+    client_statement: str
+    client_evidence: DynArray[str]
+    client_submitted: bool
+    freelancer_statement: str
+    freelancer_evidence: DynArray[str]
+    freelancer_submitted: bool
+
+
+@allow_storage
+@dataclass
 class Dispute:
     escrow_id: u256
     milestone_index: u256
@@ -137,7 +149,8 @@ class PraetorV2(gl.Contract):
     # Dispute
     dispute_counter: u256
     disputes: TreeMap[u256, Dispute]
-    dispute_by_escrow: TreeMap[u256, u256]
+    dispute_by_milestone: TreeMap[str, u256]
+    dispute_cases: TreeMap[str, DisputeCase]
 
     # Reputation
     profiles: TreeMap[Address, ReputationProfile]
@@ -434,15 +447,11 @@ class PraetorV2(gl.Contract):
         self,
         escrow_id: int,
         milestone_index: int,
-        evidence_urls: DynArray[str],
-        evidence_types: DynArray[str],
-        job_description: str,
-        milestone_title: str,
-        milestone_description: str,
     ) -> VerificationResult:
-        if len(evidence_urls) == 0:
-            raise gl.vm.UserError("At least one evidence required")
-
+        """Verify a milestone using ONLY the stored milestone criteria and the
+        evidence that was committed on-chain via submit_evidence. No caller
+        supplies the criteria or the evidence, so verification cannot be
+        swayed by the party submitting it."""
         escrow = self.escrows[escrow_id]
         if escrow.status == "completed":
             raise gl.vm.UserError("Escrow already completed")
@@ -452,38 +461,44 @@ class PraetorV2(gl.Contract):
         idx = int(milestone_index)
         if idx < 0 or idx >= len(escrow.milestones):
             raise gl.vm.UserError("Invalid milestone index")
-        if escrow.milestones[idx].status in ("paid", "refunded", "split", "verified"):
+        ms = escrow.milestones[idx]
+        if ms.status in ("paid", "refunded", "split", "verified"):
             raise gl.vm.UserError("Milestone already settled")
+
+        # Verification is bound to the committed on-chain evidence.
+        job = self.job_postings[escrow.job_id]
+        evidence_type = job.evidence_types[idx] if idx < len(job.evidence_types) else ""
+        committed_url = ms.evidence_url
+        if committed_url == "":
+            raise gl.vm.UserError("No evidence committed — call submit_evidence first")
 
         def leader_fn() -> dict:
             evidence_details = ""
-            for i in range(len(evidence_urls)):
-                url = evidence_urls[i]
-                etype = evidence_types[i]
-                evidence_details += f"\n  {i+1}. [{etype}] {url}"
-                try:
-                    if etype == "GitHub":
-                        resp = gl.nondet.web.get(url)
-                        content = resp.body.decode("utf-8")
-                        evidence_details += f"\n     Fetched content: {content[:1500]}"
-                    else:
-                        content = gl.nondet.web.render(url, mode="text")
-                        evidence_details += f"\n     Rendered content: {content[:1500]}"
-                except Exception as ex:
-                    evidence_details += "\n     (Could not fetch content)"
+            try:
+                if evidence_type == "GitHub":
+                    resp = gl.nondet.web.get(committed_url)
+                    content = resp.body.decode("utf-8")
+                else:
+                    content = gl.nondet.web.render(committed_url, mode="text")
+                evidence_details += f"\n     Fetched content: {str(content)[:1500]}"
+            except Exception:
+                evidence_details += "\n     (Could not fetch content)"
 
             prompt = f"""
 You are an AI milestone verifier for Praetor escrow platform.
-Evaluate whether the evidence demonstrates milestone completion.
+Evaluate whether the COMMITTED evidence demonstrates completion of the stored milestone criteria.
 
-JOB: {job_description}
-MILESTONE: {milestone_title} - {milestone_description}
+JOB: {escrow.job_title} — {escrow.job_description}
+MILESTONE: {ms.title} - {ms.description}
+REQUIRED EVIDENCE TYPE: {evidence_type}
 
+COMMITTED EVIDENCE URL: {committed_url}
 FETCHED EVIDENCE CONTENT:
 {evidence_details}
 
 RULES:
-- If 2+ evidence items show relevant, credible proof of work, milestone PASSES
+- The committed evidence MUST be relevant, credible proof of the milestone deliverables
+- Prefer decisive evidence; if only cursory or unrelated content is shown, FAIL
 - Score 0-100 based on evidence quality and completeness
 - Explain your reasoning, referencing specific content from the evidence
 
@@ -497,7 +512,6 @@ Respond ONLY as JSON:
                 "passed": bool(res.get("passed", False)),
                 "score": max(0, min(100, int(res.get("score", 0)))),
                 "reasoning": str(res.get("reasoning", "")),
-                "evidence_count": len(evidence_urls),
             }
 
         def validator_fn(leader_result) -> bool:
@@ -507,10 +521,15 @@ Respond ONLY as JSON:
             if not isinstance(data, dict) or "score" not in data:
                 return False
             score = data.get("score")
+            passed = data.get("passed", False)
             if not isinstance(score, int) or not (0 <= score <= 100):
                 return False
             my = leader_fn()
             if not isinstance(my, dict) or "score" not in my:
+                return False
+            # Validators must agree on the ACTUAL pass/fail category, not only
+            # the numeric score, so a borderline disagreement cannot slip by.
+            if my["passed"] != passed:
                 return False
             return abs(my["score"] - score) <= 15
 
@@ -520,14 +539,12 @@ Respond ONLY as JSON:
             passed=result["passed"],
             score=u8(result["score"]),
             reasoning=result["reasoning"],
-            evidence_count=u8(result["evidence_count"]),
+            evidence_count=u8(1),
         )
 
         key = f"{escrow_id}_{milestone_index}"
         self.verifications[key] = verification
 
-        idx = int(milestone_index)
-        ms = escrow.milestones[idx]
         ms.verified = result["passed"]
         ms.ai_score = u8(result["score"])
         ms.status = "verified" if result["passed"] else "rejected"
@@ -555,15 +572,16 @@ Respond ONLY as JSON:
     # ── Dispute Methods ─────────────────────────────────────────────────────
 
     @gl.public.write
-    def resolve_dispute(
+    def submit_dispute_case(
         self,
         escrow_id: int,
         milestone_index: int,
-        client_statement: str,
-        client_evidence: DynArray[str],
-        freelancer_statement: str,
-        freelancer_evidence: DynArray[str],
-    ) -> str:
+        statement: str,
+        evidence_urls: DynArray[str],
+    ):
+        """Each escrow party submits its OWN authenticated case. The sender can
+        only write their own side; nobody can put words in the other party's
+        mouth (no single caller can supply both statements anymore)."""
         escrow = self.escrows[escrow_id]
         if escrow.status == "completed":
             raise gl.vm.UserError("Escrow already completed")
@@ -582,10 +600,82 @@ Respond ONLY as JSON:
         if ms.status == "verified":
             raise gl.vm.UserError("Milestone already verified — release payment instead")
 
-        if escrow_id in self.dispute_by_escrow:
-            existing = self.disputes[self.dispute_by_escrow[escrow_id]]
+        key = f"{escrow_id}_{milestone_index}"
+        case = self.dispute_cases.get(key, DisputeCase(
+            client_statement="", client_evidence=[], client_submitted=False,
+            freelancer_statement="", freelancer_evidence=[], freelancer_submitted=False,
+        ))
+
+        if sender == escrow.client:
+            if case.client_submitted:
+                raise gl.vm.UserError("Client case already submitted")
+            case.client_statement = statement
+            case.client_evidence = evidence_urls
+            case.client_submitted = True
+        else:
+            if case.freelancer_submitted:
+                raise gl.vm.UserError("Freelancer case already submitted")
+            case.freelancer_statement = statement
+            case.freelancer_evidence = evidence_urls
+            case.freelancer_submitted = True
+
+        self.dispute_cases[key] = case
+        escrow.dispute_open = True
+        self.escrows[escrow_id] = escrow
+        self._log_event("dispute_case_submitted", escrow_id,
+                        f"Dispute case #{escrow_id}/{milestone_index} submitted")
+
+    @gl.public.view
+    def get_dispute_case(self, escrow_id: int, milestone_index: int) -> DisputeCase:
+        key = f"{escrow_id}_{milestone_index}"
+        return self.dispute_cases.get(key, DisputeCase(
+            client_statement="", client_evidence=[], client_submitted=False,
+            freelancer_statement="", freelancer_evidence=[], freelancer_submitted=False,
+        ))
+
+    @gl.public.write
+    def resolve_dispute(
+        self,
+        escrow_id: int,
+        milestone_index: int,
+    ) -> str:
+        """Resolve a dispute using both parties' committed cases. Validators
+        must agree on the verdict CATEGORY (client / freelancer / split). A
+        freelancer-win ruling pays the freelancer ATOMICALLY in this same tx —
+        exactly like client-win (refund) and split (pay both) already do. Since
+        the paid-out milestone becomes terminal, no separate release is possible
+        on a dispute-settled milestone."""
+        escrow = self.escrows[escrow_id]
+        if escrow.status == "completed":
+            raise gl.vm.UserError("Escrow already completed")
+
+        sender = gl.message.sender_address
+        if sender != escrow.client and sender != escrow.freelancer:
+            raise gl.vm.UserError("Only escrow parties can open a dispute")
+
+        idx = int(milestone_index)
+        if idx < 0 or idx >= len(escrow.milestones):
+            raise gl.vm.UserError("Invalid milestone index")
+
+        ms = escrow.milestones[idx]
+        if ms.status in ("paid", "refunded", "split"):
+            raise gl.vm.UserError("Milestone already settled")
+        if ms.status == "verified":
+            raise gl.vm.UserError("Milestone already verified — release payment instead")
+
+        key = f"{escrow_id}_{milestone_index}"
+        case = self.dispute_cases.get(key, DisputeCase(
+            client_statement="", client_evidence=[], client_submitted=False,
+            freelancer_statement="", freelancer_evidence=[], freelancer_submitted=False,
+        ))
+        # Both parties must have submitted their own case; a dispute is only
+        # adjudicated once each side's true position is committed on-chain.
+        if not (case.client_submitted and case.freelancer_submitted):
+            raise gl.vm.UserError("Both parties must submit a case first")
+        if key in self.dispute_by_milestone:
+            existing = self.disputes[self.dispute_by_milestone[key]]
             if existing.resolved:
-                raise gl.vm.UserError("Dispute already resolved for this escrow")
+                raise gl.vm.UserError("Dispute already resolved for this milestone")
 
         dispute_id = self.dispute_counter
         self.dispute_counter = self.dispute_counter + u256(1)
@@ -594,6 +684,10 @@ Respond ONLY as JSON:
 
         work_evidence = ms.evidence_url
         work_title = ms.title
+        client_statement = case.client_statement
+        client_evidence = case.client_evidence
+        freelancer_statement = case.freelancer_statement
+        freelancer_evidence = case.freelancer_evidence
 
         def fetch_evidence(urls) -> str:
             out = ""
@@ -605,6 +699,13 @@ Respond ONLY as JSON:
                 except Exception:
                     out += "\n    (Could not fetch)"
             return out
+
+        def classify(share: int) -> str:
+            if share >= 67:
+                return "client"
+            if share <= 33:
+                return "freelancer"
+            return "split"
 
         def leader_fn() -> dict:
             work_section = "WORK CONTENT: none"
@@ -628,17 +729,22 @@ FREELANCER'S EVIDENCE:{freelancer_ev}
 
 Evaluate the submitted work and both arguments. Decide how the milestone funds should be split.
 Respond ONLY as JSON:
-{{"client_share": int 0-100, "reasoning": "string"}}
+{{"client_share": int 0-100, "verdict": "client"|"freelancer"|"split", "reasoning": "string"}}
 - client_share is the percentage of the milestone amount that should go to the CLIENT.
-- 100 = fully the client's money (freelancer gets nothing, refund).
-- 0 = fully the freelancer's money (milestone verified, client pays).
-- ~50 = split evenly.
+- 100 = fully the client's money (freelancer gets nothing, refund) — verdict "client".
+- 0 = fully the freelancer's money (milestone verified, client pays) — verdict "freelancer".
+- ~50 = split evenly — verdict "split".
+- verdict MUST be consistent with client_share: client>=67, freelancer<=33, split 34-66.
 """
             res = gl.nondet.exec_prompt(prompt, response_format="json")
             if not isinstance(res, dict):
                 raise gl.UserError("Invalid response")
             share = max(0, min(100, int(res.get("client_share", 50))))
-            return {"client_share": share, "reasoning": str(res.get("reasoning", ""))}
+            return {
+                "client_share": share,
+                "verdict": classify(share),
+                "reasoning": str(res.get("reasoning", "")),
+            }
 
         def validator_fn(leader_result) -> bool:
             if not isinstance(leader_result, gl.vm.Return):
@@ -652,17 +758,16 @@ Respond ONLY as JSON:
             my = leader_fn()
             if not isinstance(my, dict) or "client_share" not in my:
                 return False
+            # Validators must agree on the ACTUAL verdict category, not just a
+            # close numeric share (e.g. 32 vs 40 are within 20 but NOT the same
+            # ruling: freelancer vs split).
+            if classify(my["client_share"]) != classify(share):
+                return False
             return abs(my["client_share"] - share) <= 20
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
-        share = int(result["client_share"])
+        verdict = classify(int(result["client_share"]))
         reasoning = str(result["reasoning"])
-        if share >= 67:
-            verdict = "client"
-        elif share <= 33:
-            verdict = "freelancer"
-        else:
-            verdict = "split"
 
         self.disputes[dispute_id] = Dispute(
             escrow_id=escrow_id,
@@ -681,21 +786,37 @@ Respond ONLY as JSON:
             resolved=True,
             reasoning=reasoning,
         )
-        self.dispute_by_escrow[escrow_id] = dispute_id
+        self.dispute_by_milestone[key] = dispute_id
         self._log_event("dispute_opened", escrow_id, f"Dispute #{dispute_id} opened")
 
-        escrow = self.escrows[escrow_id]
         ms = escrow.milestones[idx]
         amount = int(ms.amount)
 
         if verdict == "freelancer":
-            ms.status = "verified"
+            pct = int(self.platform_fee_percent)
+            fee = (amount * pct) // 100
+            payout = int(amount - fee)
+            _EOA(escrow.freelancer).emit_transfer(value=u256(payout))
+            ms.status = "paid"
             ms.verified = True
             escrow.winner = escrow.freelancer
             self._log_event("dispute_resolved", escrow_id,
-                            f"Dispute #{dispute_id}: freelancer wins — milestone verified")
+                            f"Dispute #{dispute_id}: freelancer wins — paid {payout} wei (fee {fee})")
             self._record_dispute_result(str(escrow.freelancer), True)
             self._record_dispute_result(str(escrow.client), False)
+            # Dispute-settled payout is a real completed job.
+            self._record_job_completed(str(escrow.client), "client", amount)
+            self._record_job_completed(str(escrow.freelancer), "freelancer", payout)
+            all_paid = True
+            for m in escrow.milestones:
+                if m.status != "paid":
+                    all_paid = False
+                    break
+            if all_paid:
+                escrow.status = "completed"
+                job = self.job_postings[escrow.job_id]
+                job.status = "completed"
+                self.job_postings[escrow.job_id] = job
         elif verdict == "client":
             _EOA(escrow.client).emit_transfer(value=u256(amount))
             ms.status = "refunded"
@@ -734,10 +855,11 @@ Respond ONLY as JSON:
         return self.dispute_counter
 
     @gl.public.view
-    def get_dispute_by_escrow(self, escrow_id: int) -> int:
-        if escrow_id not in self.dispute_by_escrow:
+    def get_dispute_by_escrow_milestone(self, escrow_id: int, milestone_index: int) -> int:
+        key = f"{escrow_id}_{milestone_index}"
+        if key not in self.dispute_by_milestone:
             return u256(2**256 - 1)
-        return self.dispute_by_escrow[escrow_id]
+        return self.dispute_by_milestone[key]
 
     def _record_dispute_result(self, user_address: str, won: bool):
         user = Address(user_address)
