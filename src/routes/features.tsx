@@ -909,7 +909,7 @@ function VerifyDemo() {
   };
 
   const verify = async () => {
-    if (items.length === 0) return;
+    if (!canVerify || !account) return;
     setState("verifying");
     setCurrentStep(0);
     setErrorMsg("");
@@ -923,12 +923,15 @@ function VerifyDemo() {
     }
 
     try {
-      const txHash = await verifyMilestone(
-        account!,
-        BigInt(escrowId),
-        BigInt(milestoneIndex),
-      );
+      // 1) Commit evidence on-chain FIRST — verification is bound to the
+      // committed evidence. Only the last URL evaluated by the AI verifier.
+      const primary = items[items.length - 1];
+      const evTx = await submitEvidence(account, BigInt(escrowId), BigInt(milestoneIndex), primary.url);
+      await waitForReceipt(evTx);
+      invalidateAllCache();
 
+      // 2) Verify against the on-chain committed evidence.
+      const txHash = await verifyMilestone(account!, BigInt(escrowId), BigInt(milestoneIndex));
       await waitForReceipt(txHash);
 
       // Fetch verification result from contract
@@ -944,7 +947,7 @@ function VerifyDemo() {
     }
   };
 
-  const canVerify = escrowId.trim() && jobDescription.trim() && milestoneTitle.trim() && items.length > 0 && connected;
+  const canVerify = escrowId.trim() && items.length > 0 && !state.includes("verifying") && connected;
 
   return (
     <DemoShell
@@ -1106,21 +1109,19 @@ function VerifyDemo() {
             </div>
           </div>
 
-          {items.length > 0 && (
-            <div className="space-y-1">
-              {items.map((it) => (
-                <div key={it.id} className="flex items-center gap-3 rounded-lg border border-gold/15 bg-white/[0.02] p-2.5 text-xs">
-                  <it.icon className="h-3.5 w-3.5 text-gold" />
-                  <span className="uppercase tracking-widest text-gold-soft w-16">{it.type}</span>
-                  <span className="flex-1 truncate text-marble">{it.url}</span>
-                  <button onClick={() => setItems((prev) => prev.filter((x) => x.id !== it.id))} className="text-muted-foreground hover:text-foreground"><Trash2 className="h-3.5 w-3.5" /></button>
+              {items.length > 0 && (
+                <div className="space-y-1">
+                  {items.map((it) => (
+                    <div key={it.id} className="flex items-center gap-3 rounded-lg border border-gold/15 bg-white/[0.02] p-2.5 text-xs">
+                      <it.icon className="h-3.5 w-3.5 text-gold" />
+                      <span className="uppercase tracking-widest text-gold-soft w-16">{it.type}</span>
+                      <span className="flex-1 truncate text-marble">{it.url}</span>
+                      <button onClick={() => setItems((prev) => prev.filter((x) => x.id !== it.id))} className="text-muted-foreground hover:text-foreground"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-muted-foreground px-0.5">Evidence is committed on-chain automatically when you verify — the last URL is what the AI verifier fetches.</p>
                 </div>
-              ))}
-              <button onClick={async () => { for (const it of items) { try { const h = await submitEvidence(account!, BigInt(escrowId), BigInt(milestoneIndex), it.url); await waitForReceipt(h); } catch { /* */ } } invalidateAllCache(); }} type="button" className="inline-flex items-center gap-1.5 text-xs text-gold-soft hover:text-foreground mt-1">
-                <ExternalLink className="h-3 w-3" /> Submit evidence on-chain
-              </button>
-            </div>
-          )}
+              )}
 
           {!connected && <div className="rounded-lg border border-gold/20 bg-gold/5 p-2 text-xs text-gold-soft text-center">Connect wallet to verify</div>}
 
@@ -1516,7 +1517,7 @@ function DisputeDemo() {
                 {loadingEscrows ? (
                   <div className="text-xs text-muted-foreground text-center py-2">Loading your escrows…</div>
                 ) : myDisputeEscrows.length === 0 ? (
-                  <div className="text-xs text-muted-foreground text-center py-4">No milestones ready for dispute. Complete a verification first (AI Verify tab), then disputed/rejected milestones will appear here.</div>
+                  <div className="text-xs text-muted-foreground text-center py-4">No milestones ready for dispute. Milestones rejected by AI verification (AI Verify tab) will appear here.</div>
                 ) : (
                   <select
                     value={dropdownVal}
@@ -1537,7 +1538,7 @@ function DisputeDemo() {
                     <option value="">— Select escrow —</option>
                     {myDisputeEscrows.map((escrow) =>
                       (escrow.milestones || []).map((ms: any, i: number) => {
-                        if (ms.status !== "verified" && ms.status !== "rejected") return null;
+                        if (ms.status !== "rejected") return null;
                         return (
                           <option key={escrow.escrowId?.toString() + ":" + i} value={escrow.escrowId?.toString() + ":" + i}>
                             #{escrow.escrowId?.toString()} — {escrow.jobTitle || escrow.job_title} — M{i + 1}: {ms.title}
