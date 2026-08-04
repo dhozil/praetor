@@ -929,9 +929,8 @@ function VerifyDemo() {
       }
 
       // 1) Commit evidence on-chain FIRST — verification is bound to the
-      // committed evidence. Only the last URL evaluated by the AI verifier.
-      const primary = items[items.length - 1];
-      const evTx = await submitEvidence(account, BigInt(escrowId), BigInt(milestoneIndex), primary.url);
+      // committed evidence. All added URLs are committed and evaluated.
+      const evTx = await submitEvidence(account, BigInt(escrowId), BigInt(milestoneIndex), items.map((i) => i.url));
       // Best-effort wait: if the RPC poller gets rate-limited, DON'T abort —
       // same-sender txs execute in nonce order, so the verify below still runs
       // after the evidence commits on-chain. Wait again for evTx at the end.
@@ -1130,7 +1129,7 @@ function VerifyDemo() {
                       <button onClick={() => setItems((prev) => prev.filter((x) => x.id !== it.id))} className="text-muted-foreground hover:text-foreground"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                   ))}
-                  <p className="text-[10px] text-muted-foreground px-0.5">Evidence is committed on-chain automatically when you verify — the last URL is what the AI verifier fetches.</p>
+                  <p className="text-[10px] text-muted-foreground px-0.5">All links are committed on-chain and evaluated by the AI verifier when you verify.</p>
                 </div>
               )}
 

@@ -214,12 +214,12 @@ export async function submitEvidence(
   walletAddress: string,
   escrowId: bigint,
   milestoneIndex: bigint,
-  evidenceUrl: string,
+  evidenceUrls: string[],
 ): Promise<string> {
   const txHash = await getWriteClient(walletAddress).writeContract({
     address: PRAETOR_ADDRESS,
     functionName: "submit_evidence",
-    args: [escrowId, milestoneIndex, evidenceUrl],
+    args: [escrowId, milestoneIndex, evidenceUrls],
     value: BigInt(0),
   });
   return txHash as string;

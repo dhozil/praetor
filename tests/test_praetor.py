@@ -74,7 +74,7 @@ def _funded_escrow(vm, c, milestones=1):
 
 def _submit_and_verify(vm, c, escrow_id, freelancer):
     with vm.prank(freelancer):
-        c.submit_evidence(escrow_id, 0, "https://evidence.example")
+        c.submit_evidence(escrow_id, 0, ["https://evidence.example"])
         vm.mock_llm("milestone verifier", VALIDATOR_PASS)
         c.verify_milestone(escrow_id, 0)
 
@@ -171,6 +171,25 @@ def test_verify_requires_committed_evidence(contract, reset):
             c.verify_milestone(0, 0)
 
 
+def test_verify_commits_and_evaluates_all_evidence_urls(contract, reset):
+    """ALL committed evidence URLs are stored and evaluated — submitting two
+    links must yield evidence_count == 2 (not just the last one), and both
+    URLs must be fetched by the verifier."""
+    vm, c = contract
+    job_id, client, freelancer = _funded_escrow(vm, c)
+
+    vm.mock_web("github.example", {"status": 200, "body": "repo readme"})
+    vm.mock_web("site.example", {"status": 200, "body": "chatbot conversation flow design doc"})
+    with vm.prank(freelancer):
+        c.submit_evidence(0, 0, ["https://github.example", "https://site.example"])
+        vm.mock_llm("milestone verifier", VALIDATOR_PASS)
+        c.verify_milestone(0, 0)
+
+    assert c.get_verification(0, 0).evidence_count == 2
+    ms = c.get_escrow(0).milestones[0]
+    assert list(ms.evidence_urls) == ["https://github.example", "https://site.example"]
+
+
 def test_validator_rejects_pass_fail_disagreement(contract, reset):
     """A validator that sees the same score but a different pass/fail category
     (e.g. leader says passed 90, validator says failed 80) must NOT approve."""
@@ -178,7 +197,7 @@ def test_validator_rejects_pass_fail_disagreement(contract, reset):
     job_id, client, freelancer = _funded_escrow(vm, c)
 
     with vm.prank(freelancer):
-        c.submit_evidence(0, 0, "https://evidence.example")
+        c.submit_evidence(0, 0, ["https://evidence.example"])
         vm.mock_llm("milestone verifier", VALIDATOR_PASS)
         c.verify_milestone(0, 0)
     assert c.get_verification(0, 0).passed is True
@@ -195,7 +214,7 @@ def test_validator_approves_same_category_within_tolerance(contract, reset):
     job_id, client, freelancer = _funded_escrow(vm, c)
 
     with vm.prank(freelancer):
-        c.submit_evidence(0, 0, "https://evidence.example")
+        c.submit_evidence(0, 0, ["https://evidence.example"])
         vm.mock_llm("milestone verifier", VALIDATOR_PASS)
         c.verify_milestone(0, 0)
 
@@ -214,7 +233,7 @@ def test_verify_coerces_string_booleans_safely(contract, reset):
     job_id, client, freelancer = _funded_escrow(vm, c)
 
     with vm.prank(freelancer):
-        c.submit_evidence(0, 0, "https://evidence.example")
+        c.submit_evidence(0, 0, ["https://evidence.example"])
         vm.mock_llm("milestone verifier", '{"passed": "false", "score": 90, "reasoning": "x"}')
         c.verify_milestone(0, 0)
 
@@ -224,7 +243,7 @@ def test_verify_coerces_string_booleans_safely(contract, reset):
     # And "passed": 1 (int) must be accepted as pass.
     vm.clear_mocks()
     with vm.prank(freelancer):
-        c.submit_evidence(0, 0, "https://evidence.example")
+        c.submit_evidence(0, 0, ["https://evidence.example"])
         vm.mock_llm("milestone verifier", '{"passed": 1, "score": 75, "reasoning": "y"}')
         c.verify_milestone(0, 0)
     assert c.get_verification(0, 0).passed is True
@@ -415,7 +434,7 @@ def test_settled_milestone_cannot_be_reverified(contract, reset):
             c.verify_milestone(0, 0)
     with vm.prank(freelancer):
         with vm.expect_revert("Escrow not active"):
-            c.submit_evidence(0, 0, "https://new.example")
+            c.submit_evidence(0, 0, ["https://new.example"])
 
 
 def test_paid_milestone_cannot_be_verified_again(contract, reset):
@@ -672,7 +691,7 @@ def test_evidence_cannot_overwrite_settled_milestone(contract, reset):
 
     with vm.prank(freelancer):
         with vm.expect_revert("Escrow not active"):
-            c.submit_evidence(0, 0, "https://new.example")
+            c.submit_evidence(0, 0, ["https://new.example"])
 
 
 # ── 8. Job lifecycle status must reach "completed" for history ───────────────

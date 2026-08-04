@@ -22,7 +22,7 @@ class Milestone:
     amount: u256
     evidence_types: str
     status: str
-    evidence_url: str
+    evidence_urls: DynArray[str]
     ai_score: u8
     verified: bool
 
@@ -297,7 +297,7 @@ class PraetorV2(gl.Contract):
                 amount=int(job.milestone_amounts[i]),
                 evidence_types=job.evidence_types[i] if i < len(job.evidence_types) else "",
                 status="pending",
-                evidence_url="",
+                evidence_urls=[],
                 ai_score=u8(0),
                 verified=False,
             ))
@@ -376,7 +376,7 @@ class PraetorV2(gl.Contract):
     # ── Escrow Write Methods ─────────────────────────────────────────────────
 
     @gl.public.write
-    def submit_evidence(self, escrow_id: int, milestone_index: int, evidence_url: str):
+    def submit_evidence(self, escrow_id: int, milestone_index: int, evidence_urls: DynArray[str]):
         escrow = self.escrows[escrow_id]
         if gl.message.sender_address != escrow.freelancer:
             raise gl.vm.UserError("Only freelancer can submit evidence")
@@ -386,15 +386,17 @@ class PraetorV2(gl.Contract):
         idx = int(milestone_index)
         if idx < 0 or idx >= len(escrow.milestones):
             raise gl.vm.UserError("Invalid milestone index")
+        if not evidence_urls:
+            raise gl.vm.UserError("At least one evidence URL required")
         ms = escrow.milestones[idx]
         if ms.status in ("paid", "refunded", "split", "verified"):
             raise gl.vm.UserError("Milestone already settled")
-        ms.evidence_url = evidence_url
+        ms.evidence_urls = evidence_urls
         ms.status = "evidence_submitted"
         escrow.milestones[idx] = ms
         self.escrows[escrow_id] = escrow
         self._log_event("evidence_submitted", escrow_id,
-                        f"Milestone {milestone_index} evidence submitted")
+                        f"Milestone {milestone_index} evidence submitted ({len(evidence_urls)} URL(s))")
 
     @gl.public.write
     def release_payment(self, escrow_id: int, milestone_index: int):
@@ -472,9 +474,6 @@ class PraetorV2(gl.Contract):
         # Verification is bound to the committed on-chain evidence.
         job = self.job_postings[escrow.job_id]
         evidence_type = job.evidence_types[idx] if idx < len(job.evidence_types) else ""
-        committed_url = ms.evidence_url
-        if committed_url == "":
-            raise gl.vm.UserError("No evidence committed — call submit_evidence first")
 
         # Flatten storage classes to plain strings BEFORE the nondet closures:
         # leader/validator functions get pickled for the validators, and the
@@ -484,7 +483,9 @@ class PraetorV2(gl.Contract):
         ms_title = str(ms.title)
         ms_desc = str(ms.description)
         evidence_type = str(evidence_type)
-        committed_url = str(committed_url)
+        committed_urls = [str(u) for u in ms.evidence_urls]
+        if len(committed_urls) == 0:
+            raise gl.vm.UserError("No evidence committed — call submit_evidence first")
 
         def parse_verdict(res) -> tuple:
             # Robust coercion: the LLM may return "passed" as a string
@@ -511,15 +512,17 @@ class PraetorV2(gl.Contract):
 
         def leader_fn() -> dict:
             evidence_details = ""
-            try:
-                if evidence_type == "GitHub":
-                    resp = gl.nondet.web.get(committed_url)
-                    content = resp.body.decode("utf-8")
-                else:
-                    content = gl.nondet.web.render(committed_url, mode="text")
-                evidence_details += f"\n     Fetched content: {str(content)[:1500]}"
-            except Exception:
-                evidence_details += "\n     (Could not fetch content)"
+            for i, url in enumerate(committed_urls):
+                evidence_details += f"\n   Evidence #{i + 1}: {url}"
+                try:
+                    if evidence_type == "GitHub":
+                        resp = gl.nondet.web.get(url)
+                        content = resp.body.decode("utf-8")
+                    else:
+                        content = gl.nondet.web.render(url, mode="text")
+                    evidence_details += f"\n     Fetched content: {str(content)[:1200]}"
+                except Exception:
+                    evidence_details += "\n     (Could not fetch content)"
 
             prompt = f"""
 You are an AI milestone verifier for Praetor escrow platform.
@@ -529,12 +532,12 @@ JOB: {job_title} — {job_desc}
 MILESTONE: {ms_title} - {ms_desc}
 REQUIRED EVIDENCE TYPE: {evidence_type}
 
-COMMITTED EVIDENCE URL: {committed_url}
-FETCHED EVIDENCE CONTENT:
+COMMITTED EVIDENCE ({len(committed_urls)} URL(s)):
 {evidence_details}
 
 RULES:
 - The committed evidence MUST be relevant, credible proof of the milestone deliverables
+- Evaluate ALL evidence URLs together; any one of them showing real completion counts
 - Prefer decisive evidence; if only cursory or unrelated content is shown, FAIL
 - Score 0-100 based on evidence quality and completeness
 - Explain your reasoning, referencing specific content from the evidence
@@ -577,7 +580,7 @@ Respond ONLY as JSON:
             passed=result["passed"],
             score=u8(result["score"]),
             reasoning=result["reasoning"],
-            evidence_count=u8(1),
+            evidence_count=u8(len(committed_urls)),
         )
 
         key = f"{escrow_id}_{milestone_index}"
@@ -723,8 +726,8 @@ Respond ONLY as JSON:
 
         escrow.dispute_open = True
 
-        work_evidence = ms.evidence_url
-        work_title = ms.title
+        work_ev_list = [str(u) for u in ms.evidence_urls]
+        work_title = str(ms.title)
         client_statement = case.client_statement
         client_evidence = case.client_evidence
         freelancer_statement = case.freelancer_statement
@@ -766,8 +769,8 @@ Respond ONLY as JSON:
 
         def leader_fn() -> dict:
             work_section = "WORK CONTENT: none"
-            if work_evidence:
-                work_section = "WORK CONTENT:" + fetch_evidence([work_evidence])
+            if work_ev_list:
+                work_section = "WORK CONTENT:" + fetch_evidence(work_ev_list)
             client_ev = fetch_evidence(client_ev_list)
             freelancer_ev = fetch_evidence(freelancer_ev_list)
             prompt = f"""
@@ -775,7 +778,7 @@ You are an AI dispute resolver for Praetor escrow platform.
 The freelancer submitted work for a milestone and it was evaluated. One party disagrees with the result.
 
 MILESTONE: {work_title}
-FREELANCER'S SUBMITTED WORK (evidence URL): {work_evidence}
+FREELANCER'S SUBMITTED WORK (evidence URLs): {', '.join(work_ev_list)}
 {work_section}
 
 CLIENT'S STATEMENT: {client_statement}
