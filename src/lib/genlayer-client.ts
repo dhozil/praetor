@@ -287,20 +287,23 @@ export async function resolveDispute(
 
 // ─── Marketplace Read ───────────────────────────────────────────────────────
 
-async function throttledContractCall<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+async function throttledContractCall<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  let lastErr: any = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       return await fn();
     } catch (e: any) {
-      const msg = e?.message || e?.cause || "";
+      lastErr = e;
+      const msg = (e?.message || e?.cause || "").toLowerCase();
       if (msg.includes("rate limit") && attempt < retries) {
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
         continue;
       }
-      throw e;
     }
   }
-  throw new Error("rate limit exceeded after retries");
+  throw new Error(
+    "GenLayer RPC rate limit reached (5000 requests/day). Tunggu reset harian, atau refresh setelah beberapa menit.",
+  );
 }
 
 function cachedRead<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -581,13 +584,21 @@ export async function waitForReceipt(
   txHash: string,
   status: TransactionStatus = TransactionStatus.FINALIZED,
 ) {
-  const receipt = await readClient.waitForTransactionReceipt({
-    hash: txHash as any,
-    status,
-    interval: 3000,
-    retries: 60,
-  });
-  return receipt;
+  try {
+    const receipt = await readClient.waitForTransactionReceipt({
+      hash: txHash as any,
+      status,
+      interval: 4000,
+      retries: 20,
+    });
+    return receipt;
+  } catch (e: any) {
+    const msg = e?.message || e?.cause || "";
+    if (msg.toLowerCase().includes("rate limit")) {
+      throw new Error("GenLayer RPC rate limit reached (5000 requests/day). Tunggu reset harian lalu coba lagi.");
+    }
+    throw e;
+  }
 }
 
 export function openFaucet() {

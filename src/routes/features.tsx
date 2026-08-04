@@ -48,7 +48,6 @@ import {
   verifyMilestone,
   getVerification,
   getDisputeByEscrowMilestoneFresh,
-  getDisputeCounterFresh,
   getDisputeFresh,
   releasePayment,
   resolveDispute,
@@ -1455,28 +1454,15 @@ function DisputeDemo() {
       await waitForReceipt(hash);
       invalidateAllCache();
 
-      // Read the stored verdict — no manual dispute ID needed
+      // Read the stored verdict via the direct per-milestone index. The tx is
+      // already FINALIZED, so a couple of retries is plenty — no unbounded scan.
       let d: any = null;
-      for (let attempt = 0; attempt < 30 && !d; attempt++) {
+      for (let attempt = 0; attempt < 3 && !d; attempt++) {
         try {
           const did = await getDisputeByEscrowMilestoneFresh(BigInt(escrowId), BigInt(milestoneIdx || "0"));
-          if (did !== null) {
-            d = await getDisputeFresh(did);
-          } else {
-            // Fallback: scan recent disputes for this escrow + milestone
-            const c = await getDisputeCounterFresh();
-            if (c > 0n) {
-              for (let i = Number(c) - 1; i >= 0; i--) {
-                const cand = await getDisputeFresh(BigInt(i));
-                if (cand && cand.escrow_id?.toString() === escrowId && Number(cand.milestone_index) === parseInt(milestoneIdx || "0") && cand.resolved) {
-                  d = cand;
-                  break;
-                }
-              }
-            }
-          }
+          if (did !== null) d = await getDisputeFresh(did);
         } catch { /* retry */ }
-        if (!d) await new Promise((r) => setTimeout(r, 3000));
+        if (!d) await new Promise((r) => setTimeout(r, 2000));
       }
       if (d) {
         setResolution(d);
